@@ -3,20 +3,26 @@
 # Supports: kubectl, helm, k9s
 
 install_kubernetes_tools() {
-    log_info "Installing Kubernetes tools..."
-    # Example install logic (stub)
-    if [[ "${CONFIG_kubectl:-false}" == "true" ]]; then
-        log_info "Would install kubectl"
-        # Actual install logic here
-    fi
-    if [[ "${CONFIG_helm:-false}" == "true" ]]; then
-        log_info "Would install helm"
-        # Actual install logic here
-    fi
-    if [[ "${CONFIG_k9s:-false}" == "true" ]]; then
-        log_info "Would install k9s"
-        # Actual install logic here
-    fi
+    local tools="${1:-}" # comma-separated list
+    log_info "Installing Kubernetes tools: $tools"
+    IFS=',' read -ra tool_array <<< "$tools"
+    for tool in "${tool_array[@]}"; do
+        tool=$(trim "$tool")
+        case "$tool" in
+            kubectl)
+                log_info "Would install kubectl"
+                ;;
+            helm)
+                log_info "Would install helm"
+                ;;
+            k9s)
+                log_info "Would install k9s"
+                ;;
+            *)
+                log_warn "Unknown kubernetes tool: $tool"
+                ;;
+        esac
+    done
 }
 
 # Only run if sourced as a module

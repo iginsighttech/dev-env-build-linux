@@ -3,19 +3,29 @@
 # Supports: terraform, packer, vault, consul
 
 install_hashicorp_tools() {
-    log_info "Installing HashiCorp tools..."
-    if [[ "${CONFIG_terraform:-false}" == "true" ]]; then
-        log_info "Would install terraform"
-    fi
-    if [[ "${CONFIG_packer:-false}" == "true" ]]; then
-        log_info "Would install packer"
-    fi
-    if [[ "${CONFIG_vault:-false}" == "true" ]]; then
-        log_info "Would install vault"
-    fi
-    if [[ "${CONFIG_consul:-false}" == "true" ]]; then
-        log_info "Would install consul"
-    fi
+    local tools="${1:-}" # comma-separated list
+    log_info "Installing HashiCorp tools: $tools"
+    IFS=',' read -ra tool_array <<< "$tools"
+    for tool in "${tool_array[@]}"; do
+        tool=$(trim "$tool")
+        case "$tool" in
+            terraform)
+                log_info "Would install terraform"
+                ;;
+            packer)
+                log_info "Would install packer"
+                ;;
+            vault)
+                log_info "Would install vault"
+                ;;
+            consul)
+                log_info "Would install consul"
+                ;;
+            *)
+                log_warn "Unknown hashicorp tool: $tool"
+                ;;
+        esac
+    done
 }
 
 if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
