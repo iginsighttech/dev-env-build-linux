@@ -484,7 +484,7 @@ execute_install_command() {
                 containers)
                     for t in docker docker-compose podman containerd; do
                         v="CONFIG_${t//-/_}"
-                        if [[ "${!v}" == "true" || "${!v}" == "auto" ]]; then
+                        if [[ "${!v:-}" == "true" || "${!v:-}" == "auto" ]]; then
                             tool_list+="$t," 
                         fi
                     done
@@ -492,7 +492,7 @@ execute_install_command() {
                 kubernetes)
                     for t in kubectl helm k9s; do
                         v="CONFIG_${t//-/_}"
-                        if [[ "${!v}" == "true" || "${!v}" == "auto" ]]; then
+                        if [[ "${!v:-}" == "true" || "${!v:-}" == "auto" ]]; then
                             tool_list+="$t," 
                         fi
                     done
@@ -500,7 +500,7 @@ execute_install_command() {
                 hashicorp)
                     for t in terraform packer vault consul; do
                         v="CONFIG_${t//-/_}"
-                        if [[ "${!v}" == "true" || "${!v}" == "auto" ]]; then
+                        if [[ "${!v:-}" == "true" || "${!v:-}" == "auto" ]]; then
                             tool_list+="$t," 
                         fi
                     done
@@ -508,7 +508,7 @@ execute_install_command() {
                 cloud)
                     for t in aws_cli gcloud azure_cli bicep; do
                         v="CONFIG_${t//-/_}"
-                        if [[ "${!v}" == "true" || "${!v}" == "auto" ]]; then
+                        if [[ "${!v:-}" == "true" || "${!v:-}" == "auto" ]]; then
                             tool_list+="$t," 
                         fi
                     done
@@ -516,7 +516,7 @@ execute_install_command() {
                 devtools)
                     for t in pyenv nvm rbenv git jq powershell; do
                         v="CONFIG_${t//-/_}"
-                        if [[ "${!v}" == "true" || "${!v}" == "auto" ]]; then
+                        if [[ "${!v:-}" == "true" || "${!v:-}" == "auto" ]]; then
                             tool_list+="$t," 
                         fi
                     done
