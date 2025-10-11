@@ -1,0 +1,101 @@
+# InSight Dev Bootstrap - Minimal Configuration
+# Lightweight installation with essential tools only
+
+# Installation configuration
+installation:
+  mode: auto
+  verify_signatures: false  # Skip for speed
+  verify_checksums: true
+  create_backups: false     # Minimal overhead
+  parallel_downloads: 4
+  timeout_seconds: 15
+  max_retries: 3
+
+# Tool categories (minimal set)
+categories:
+  containers: true          # Docker only
+  kubernetes: false         # Skip Kubernetes tools
+  hashicorp: false          # Skip infrastructure tools
+  cloud: false              # Skip cloud tools
+  devtools: false           # Skip language managers
+
+# Individual tool selection (essential only)
+tools:
+  # Basic container support
+  docker: true
+  docker-compose: true
+  podman: false
+  containerd: false
+  
+  # No Kubernetes tools
+  kubectl: false
+  helm: false
+  k9s: false
+  
+  # No HashiCorp tools
+  terraform: false
+  packer: false
+  vault: false
+  consul: false
+  
+  # No cloud tools
+  aws-cli: false
+  gcloud: false
+  azure-cli: false
+  
+  # Basic development tools
+  pyenv: false
+  nvm: false
+  rbenv: false
+  git: true               # Essential
+  jq: true                # Essential for JSON processing
+
+# Version constraints (latest for all)
+versions: {}
+
+# Basic security
+security:
+  require_signatures: false
+  require_checksums: true
+  audit_logging: false
+  
+  allowed_domains:
+    - "github.com"
+    - "download.docker.com"
+  blocked_domains: []
+  
+  checksum_algorithms:
+    - sha256
+
+# Simple reporting
+reporting:
+  formats:
+    - txt
+  generate_compliance_report: false
+  include_metadata: false
+  output_directory: "."
+
+# Network configuration
+network:
+  proxy:
+    http: ""
+    https: ""
+    no_proxy: "localhost,127.0.0.1"
+  connect_timeout: 30
+  max_redirects: 5
+
+# System integration
+system:
+  start_services: true
+  enable_services: true
+  add_user_to_groups: true
+  create_groups: true
+  update_shell_profile: true
+  create_symlinks: false
+
+# Cleanup configuration
+cleanup:
+  remove_temp_files: true
+  remove_downloaded_archives: true
+  keep_backups: false     # No backups in minimal mode
+  backup_retention_days: 0

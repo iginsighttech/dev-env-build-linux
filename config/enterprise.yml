@@ -1,0 +1,145 @@
+# InSight Dev Bootstrap - Enterprise Configuration
+# Configuration for enterprise environments with enhanced security
+
+# Installation configuration
+installation:
+  mode: system            # Prefer system-wide installation
+  verify_signatures: true
+  verify_checksums: true
+  create_backups: true
+  parallel_downloads: 2   # Conservative for corporate networks
+  timeout_seconds: 30     # Longer timeout for corporate proxies
+  max_retries: 5
+
+# Tool categories (enterprise subset)
+categories:
+  containers: true
+  kubernetes: true
+  hashicorp: true
+  cloud: true
+  devtools: false         # Disable development language managers
+
+# Individual tool selection
+tools:
+  # Container tools (required for containerized deployments)
+  docker: true
+  docker-compose: true
+  podman: false           # Docker preferred in enterprise
+  containerd: auto
+  
+  # Kubernetes tools (required for orchestration)
+  kubectl: true
+  helm: true
+  k9s: false              # Optional monitoring tool
+  
+  # HashiCorp tools (infrastructure as code)
+  terraform: true
+  packer: true            # Image building
+  vault: true             # Secrets management
+  consul: false           # Optional service mesh
+  
+  # Cloud provider tools
+  aws-cli: true
+  gcloud: true
+  azure-cli: true         # Multi-cloud support
+  
+  # Essential development tools only
+  pyenv: false            # Use system Python
+  nvm: false              # Use system Node.js
+  rbenv: false            # Use system Ruby
+  git: true
+  jq: true
+
+# Version constraints (pin for stability)
+versions:
+  terraform: "1.5.7"      # Stable LTS version
+  kubectl: "1.28.0"       # Kubernetes stable
+  docker: ""              # Latest for security patches
+  aws-cli: ""             # Latest for features
+  gcloud: ""              # Latest for features
+  vault: "1.14.0"         # Stable version
+
+# Enhanced security configuration
+security:
+  require_signatures: true
+  require_checksums: true
+  audit_logging: true
+  
+  # Restricted allowed domains
+  allowed_domains:
+    - "github.com"
+    - "api.github.com"
+    - "releases.hashicorp.com"
+    - "dl.k8s.io"
+    - "get.helm.sh"
+    - "awscli.amazonaws.com"
+    - "dl.google.com"
+    - "download.docker.com"
+  
+  # Block potentially risky domains
+  blocked_domains:
+    - "raw.githubusercontent.com"  # Prefer verified releases
+  
+  checksum_algorithms:
+    - sha256
+    - sha512
+
+# Comprehensive reporting
+reporting:
+  formats:
+    - json
+    - csv
+    - html
+    - markdown
+  generate_compliance_report: true
+  include_metadata: true
+  output_directory: "/var/log/devbootstrap"
+
+# Corporate network configuration
+network:
+  proxy:
+    http: "${HTTP_PROXY}"   # Use environment variables
+    https: "${HTTPS_PROXY}"
+    no_proxy: "localhost,127.0.0.1,.corp.local,.internal"
+  
+  connect_timeout: 60       # Corporate firewalls may be slow
+  max_redirects: 3          # Conservative redirect policy
+
+# System integration (enterprise defaults)
+system:
+  start_services: true
+  enable_services: true
+  add_user_to_groups: true
+  create_groups: true
+  update_shell_profile: true
+  create_symlinks: false    # Avoid symlink security issues
+
+# Cleanup configuration
+cleanup:
+  remove_temp_files: true
+  remove_downloaded_archives: false  # Keep for audit
+  keep_backups: true
+  backup_retention_days: 30          # Extended retention
+
+# Enterprise-specific settings
+enterprise:
+  # Compliance requirements
+  compliance:
+    require_approval: false
+    approval_command: ""
+    
+  # Monitoring integration
+  monitoring:
+    send_metrics: false
+    metrics_endpoint: ""
+    
+  # Configuration management
+  config_management:
+    system: ""              # puppet, chef, ansible, etc.
+    policy_file: "/etc/devtools/security.policy"
+    
+  # Backup and disaster recovery
+  backup:
+    enabled: true
+    destination: "/var/backups/devtools"
+    retention_policy: "30d"

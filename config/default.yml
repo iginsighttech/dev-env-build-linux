@@ -1,0 +1,130 @@
+# InSight Dev Bootstrap Configuration
+# Default tool selection and installation preferences
+
+# Installation configuration
+installation:
+  mode: auto              # auto, system, user
+  verify_signatures: true
+  verify_checksums: true
+  create_backups: true
+  parallel_downloads: 4
+  timeout_seconds: 15
+  max_retries: 3
+
+# Tool categories to install
+categories:
+  containers: true        # Docker, Podman, containerd
+  kubernetes: true        # kubectl, helm, k9s
+  hashicorp: true         # Terraform, Packer, Vault
+  cloud: true             # AWS CLI, Google Cloud SDK, Azure CLI
+  devtools: true          # pyenv, nvm, rbenv
+
+# Individual tool selection (overrides categories)
+tools:
+  # Container tools
+  docker: true
+  docker-compose: true
+  podman: false
+  containerd: auto        # Install with Docker
+  
+  # Kubernetes tools
+  kubectl: true
+  helm: true
+  k9s: false
+  
+  # HashiCorp tools
+  terraform: true
+  packer: false
+  vault: true
+  consul: false
+  
+  # Cloud provider tools
+  aws-cli: true
+  gcloud: true
+  bicep: true
+  azure-cli : true
+  
+  # Development tools
+  pyenv: true
+  nvm: true
+  rbenv: true
+  git: true
+  jq: true
+
+  # Shells
+  powershell: true
+
+# Version constraints
+versions:
+  # Pin specific versions (leave empty for latest)
+  terraform: ""           # Latest
+  kubectl: ""             # Latest
+  docker: ""              # Latest
+  
+  # Example pinned versions:
+  # terraform: "1.5.0"
+  # kubectl: "1.27.0"
+
+# Security configuration
+security:
+  require_signatures: false
+  require_checksums: true
+  audit_logging: false
+  allowed_domains:
+    - "github.com"
+    - "releases.hashicorp.com"
+    - "dl.k8s.io"
+    - "get.helm.sh"
+    - "awscli.amazonaws.com"
+    - "dl.google.com"
+    - "download.docker.com"
+  blocked_domains: []
+  
+  # Checksum algorithms to use
+  checksum_algorithms:
+    - sha256
+    - sha512
+
+# Reporting configuration
+reporting:
+  formats:
+    - json
+    - csv
+    - txt
+  generate_compliance_report: false
+  include_metadata: true
+  
+  # Report output directory
+  output_directory: "."
+
+# Network configuration
+network:
+  proxy:
+    http: ""              # HTTP proxy URL
+    https: ""             # HTTPS proxy URL
+    no_proxy: "localhost,127.0.0.1"
+  
+  # Connection settings
+  connect_timeout: 30
+  max_redirects: 5
+
+# System integration
+system:
+  # Service management
+  start_services: true
+  enable_services: true
+  
+  # User/group management
+  add_user_to_groups: true
+  create_groups: true
+  
+  # Path management
+  update_shell_profile: true
+  create_symlinks: false
+
+# Cleanup configuration
+cleanup:
+  remove_temp_files: true
+  remove_downloaded_archives: true
+  keep_backups: true
+  backup_retention_days: 7
