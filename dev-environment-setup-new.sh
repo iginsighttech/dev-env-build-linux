@@ -537,22 +537,22 @@ execute_install_command() {
                     fi
                     ;;
                 kubernetes)
-                    if command_exists kubernetes_install; then
-                        kubernetes_install "$tool_list"
+                    if command_exists install_kubernetes_tools; then
+                        install_kubernetes_tools "$tool_list"
                     else
                         log_warn "Kubernetes module not loaded"
                     fi
                     ;;
                 hashicorp)
-                    if command_exists hashicorp_install; then
-                        hashicorp_install "$tool_list"
+                    if command_exists install_hashicorp_tools; then
+                        install_hashicorp_tools "$tool_list"
                     else
                         log_warn "HashiCorp module not loaded"
                     fi
                     ;;
                 cloud)
-                    if command_exists cloud_install; then
-                        cloud_install "$tool_list"
+                    if command_exists install_cloud_tools; then
+                        install_cloud_tools "$tool_list"
                     else
                         log_warn "Cloud module not loaded"
                     fi
