@@ -376,21 +376,45 @@ containers_install() {
     
     IFS=',' read -ra tool_array <<< "$tools"
     
+    # Detect WSL
+    if grep -qiE "microsoft|wsl" /proc/version; then
+        log_warn "WSL detected: Skipping container tool installation."
+        return 0
+    fi
     for tool in "${tool_array[@]}"; do
         tool=$(trim "$tool")
-        
         case "$tool" in
             docker|docker-engine)
-                install_docker_engine
+                local silent_mode="${SILENT:-0}"
+                if [[ "$silent_mode" -eq 1 ]]; then
+                    $PKG_MGR install -y docker &>/dev/null
+                else
+                    $PKG_MGR install -y docker
+                fi
                 ;;
             docker-compose|compose)
-                install_docker_compose
+                local silent_mode="${SILENT:-0}"
+                if [[ "$silent_mode" -eq 1 ]]; then
+                    $PKG_MGR install -y docker-compose &>/dev/null
+                else
+                    $PKG_MGR install -y docker-compose
+                fi
                 ;;
             podman)
-                install_podman
+                local silent_mode="${SILENT:-0}"
+                if [[ "$silent_mode" -eq 1 ]]; then
+                    $PKG_MGR install -y podman &>/dev/null
+                else
+                    $PKG_MGR install -y podman
+                fi
                 ;;
             containerd)
-                install_containerd
+                local silent_mode="${SILENT:-0}"
+                if [[ "$silent_mode" -eq 1 ]]; then
+                    $PKG_MGR install -y containerd &>/dev/null
+                else
+                    $PKG_MGR install -y containerd
+                fi
                 ;;
             *)
                 log_warn "Unknown container tool: $tool"

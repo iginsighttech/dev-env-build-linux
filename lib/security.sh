@@ -284,7 +284,7 @@ secure_download() {
     
     local temp_dir
     temp_dir=$(mktemp -d)
-    TEMP_FILES="$TEMP_FILES $temp_dir"
+    TEMP_FILES="${TEMP_FILES:-} $temp_dir"
     
     # Download file
     local temp_file="$temp_dir/$(basename "$output_file")"

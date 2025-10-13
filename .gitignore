@@ -8,15 +8,26 @@
 
 # Logs
 *.log
-# Temporary files
+# Temporary and Old labeled files
 *.tmp
 *~
-
+*old*
+*.old
 *.bak
+
 # Environment files (containing secrets, API keys, credentials)
 .env
 *.env
 .env.*
+
+# Test and Debug Files
+*test*
+tests/*
+*debug*
+
+# Copilot related files
+copilot*
+*copilot*
 
 # Local configuration that shouldn't be shared
 *.local

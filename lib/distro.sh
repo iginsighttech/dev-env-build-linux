@@ -208,7 +208,7 @@ get_baseline_packages() {
             echo "ca-certificates curl wget git jq unzip tar xz-utils gnupg lsb-release build-essential"
             ;;
         dnf|yum)
-            echo "ca-certificates curl wget git jq unzip tar xz gzip gnupg2 redhat-lsb-core gcc gcc-c++ make"
+            echo "ca-certificates curl wget git jq unzip tar xz gzip gnupg2 gcc gcc-c++ make"
             ;;
         zypper)
             echo "ca-certificates curl wget git jq unzip tar xz gzip gpg2 lsb-release gcc gcc-c++ make"

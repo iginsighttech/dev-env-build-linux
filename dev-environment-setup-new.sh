@@ -1,3 +1,4 @@
+
 #!/usr/bin/env bash
 # =====================================================================
 # InSight Dev Bootstrap v1.0.0
@@ -10,211 +11,15 @@
 # • Configuration-driven setup with YAML support
 # • Enhanced security with signature verification
 # • Comprehensive reporting and compliance features
-# • Cross-distribution Linux support
-# =====================================================================
-
-set -euo pipefail
-IFS=$'\n\t'
-
-# ---------- Script Metadata ----------
-readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-readonly SCRIPT_NAME="$(basename "${BASH_SOURCE[0]}")"
-readonly SCRIPT_VERSION="1.0.0"
 
 # Source core libraries
-# shellcheck disable=SC1091
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/lib/common.sh"
-# shellcheck disable=SC1091
 source "$SCRIPT_DIR/lib/distro.sh"
-# shellcheck disable=SC1091
-source "$SCRIPT_DIR/lib/installer.sh"
-# shellcheck disable=SC1091
-source "$SCRIPT_DIR/lib/reporter.sh"
-# shellcheck disable=SC1091
-source "$SCRIPT_DIR/lib/security.sh"
-
-# ---------- Global Configuration ----------
-DRY_RUN=0
-CHECK_ONLY=0
-FORCE_INSTALL=0
-UPGRADE_MODE=0
-USER_MODE=0
-VERBOSE=0
-DEBUG=0
-
-CONFIG_FILE=""
-SELECTED_CATEGORIES=""
-SELECTED_TOOLS=""
-VERSION_CONSTRAINTS=""
-OUTPUT_FORMATS="json,csv,txt"
-
-# ---------- Usage Information ----------
-show_usage() {
-    cat << EOF
-$SCRIPT_NAME v$SCRIPT_VERSION - InSight Dev Bootstrap
-
-USAGE:
-    $SCRIPT_NAME [OPTIONS] [COMMAND]
-
-COMMANDS:
-    install         Install development tools (default)
-    check           Check current installation status
-    upgrade         Upgrade installed tools to latest versions
-    remove          Remove installed tools
-    list            List available tools and categories
-
-OPTIONS:
-    Installation Mode:
-        --system            Install system-wide (requires root)
-        --user              Install to user directory (~/.local)
-        --dry-run           Show what would be done without making changes
-        --force             Force reinstallation of existing tools
-        --upgrade           Upgrade existing tools to latest versions
-
-    Tool Selection:
-        --categories LIST   Install specific categories (comma-separated)
-                           Available: containers,kubernetes,hashicorp,cloud,devtools
-        --tools LIST        Install specific tools (comma-separated)
-        --exclude LIST      Exclude specific tools from installation
-        --config FILE       Use configuration file (YAML)
-        --versions LIST     Pin specific versions (tool=version,...)
-
-    Configuration:
-        --config FILE       Load configuration from YAML file
-        --profile NAME      Use predefined profile (default,enterprise,minimal)
-
-    Security:
-        --verify-signatures Enable GPG signature verification
-        --verify-checksums  Enable checksum verification (default)
-        --no-verify         Disable all verification
-        --audit-log FILE    Enable security audit logging
-
-    Output & Reporting:
-        --output-formats LIST  Report formats (json,csv,txt,html,markdown)
-        --output-dir DIR       Report output directory
-        --compliance-report    Generate compliance report
-        --quiet               Minimal output
-        --verbose             Detailed output
-        --debug               Debug output
-
-    Help:
-        --help              Show this help message
-        --version           Show version information
-        --list-tools        List all available tools
-        --list-categories   List all available categories
-
-EXAMPLES:
-    # System-wide installation with default tools
-    sudo $SCRIPT_NAME
-
-    # User installation with specific categories
-    $SCRIPT_NAME --user --categories containers,kubernetes
-
-    # Install specific tools only
-    $SCRIPT_NAME --tools docker,kubectl,terraform
-
-    # Enterprise configuration with security verification
-    $SCRIPT_NAME --config config/enterprise.yml --verify-signatures
-
-    # Check current status without installing
-    $SCRIPT_NAME --check
-
-    # Dry run to preview changes
-    $SCRIPT_NAME --dry-run --categories hashicorp
-
-    # Upgrade all installed tools
-    $SCRIPT_NAME --upgrade
-
-CONFIGURATION:
-    Configuration files are loaded in this order (last one wins):
-    1. $SCRIPT_DIR/config/default.yml
-    2. /etc/devtools/config.yml
-    3. ~/.config/devtools.yml
-    4. File specified with --config
-
-ENVIRONMENT VARIABLES:
-    HTTP_PROXY, HTTPS_PROXY    Proxy configuration
-    LOG_LEVEL                  Log level (1-4, default: 3)
-    LOG_FILE                   Log file path
-    VERIFY_SIGNATURES          Enable signature verification (true/false)
-    VERIFY_CHECKSUMS          Enable checksum verification (true/false)
-
-EOF
-}
-
-show_version() {
-    cat << EOF
-$SCRIPT_NAME v$SCRIPT_VERSION
-
-Copyright (c) 2025 InSight Development Team
-Licensed under MIT License
-
-System Information:
-  OS: $(uname -s) $(uname -r)
-  Architecture: $(uname -m)
-  Bash: $BASH_VERSION
-  
-Libraries:
-  Common: ${COMMON_LIB_LOADED:-not loaded}
-  Distro: ${DISTRO_LIB_LOADED:-not loaded}
-  Installer: ${INSTALLER_LIB_LOADED:-not loaded}
-  Reporter: ${REPORTER_LIB_LOADED:-not loaded}
-  Security: ${SECURITY_LIB_LOADED:-not loaded}
-EOF
-}
-
-# ---------- Tool and Category Lists ----------
-list_available_tools() {
-    cat << EOF
-Available Tools:
-
-CONTAINERS:
-  docker          Docker Engine and CLI
-  docker-compose  Docker Compose orchestration tool
-  podman          Podman container engine (rootless)
-  containerd      containerd runtime
-
-KUBERNETES:
-  kubectl         Kubernetes command-line tool
-  helm            Kubernetes package manager
-  k9s             Kubernetes cluster management UI
-
-HASHICORP:
-  terraform       Infrastructure as Code tool
-  packer          Image building tool
-  vault           Secrets management
-  consul          Service mesh and discovery
-
-CLOUD:
-  aws-cli         Amazon Web Services CLI v2
-  gcloud          Google Cloud SDK
-  azure-cli       Microsoft Azure CLI
-
-DEVTOOLS:
-  pyenv           Python version manager
-  nvm             Node.js version manager
-  rbenv           Ruby version manager
-  git             Git version control
-  jq              JSON processor
-EOF
-}
-
-list_available_categories() {
-    cat << EOF
-Available Categories:
-
-containers      Container engines and tools (Docker, Podman)
-kubernetes      Kubernetes orchestration tools (kubectl, helm)
-hashicorp       HashiCorp infrastructure tools (Terraform, Vault, Packer)
-cloud           Cloud provider CLIs (AWS, Google Cloud, Azure)
-devtools        Development language managers (pyenv, nvm, rbenv)
-EOF
-}
 
 # ---------- Argument Parsing ----------
 parse_arguments() {
     local command="install"
-    
     while [[ $# -gt 0 ]]; do
         case "$1" in
             # Commands
@@ -222,7 +27,6 @@ parse_arguments() {
                 command="$1"
                 shift
                 ;;
-            
             # Installation mode
             --system)
                 USER_MODE=0
@@ -244,7 +48,6 @@ parse_arguments() {
                 UPGRADE_MODE=1
                 shift
                 ;;
-                
             # Tool selection
             --categories)
                 SELECTED_CATEGORIES="$2"
@@ -262,7 +65,6 @@ parse_arguments() {
                 VERSION_CONSTRAINTS="$2"
                 shift 2
                 ;;
-                
             # Configuration
             --config)
                 CONFIG_FILE="$2"
@@ -272,7 +74,6 @@ parse_arguments() {
                 CONFIG_FILE="$SCRIPT_DIR/config/$2.yml"
                 shift 2
                 ;;
-                
             # Security
             --verify-signatures)
                 VERIFY_SIGNATURES="true"
@@ -292,7 +93,6 @@ parse_arguments() {
                 SECURITY_LOG_FILE="$2"
                 shift 2
                 ;;
-                
             # Output and reporting
             --output-formats)
                 OUTPUT_FORMATS="$2"
@@ -321,7 +121,11 @@ parse_arguments() {
                 set -x
                 shift
                 ;;
-                
+            # Global flag: force latest version check
+            --force-latest)
+                FORCE_LATEST=1
+                shift
+                ;;
             # Help and information
             --help|-h)
                 show_usage
@@ -339,12 +143,10 @@ parse_arguments() {
                 list_available_categories
                 exit 0
                 ;;
-                
             # Unknown option
             --*)
                 die $EXIT_INVALID_ARGS "Unknown option: $1"
                 ;;
-                
             # Positional arguments
             *)
                 # First positional argument is command if not already set
@@ -357,10 +159,8 @@ parse_arguments() {
                 ;;
         esac
     done
-    
     # Export command for use by other functions
     export COMMAND="$command"
-    
     # Export configuration
     export DRY_RUN CHECK_ONLY FORCE_INSTALL UPGRADE_MODE USER_MODE VERBOSE DEBUG
     export SELECTED_CATEGORIES SELECTED_TOOLS VERSION_CONSTRAINTS OUTPUT_FORMATS
@@ -384,9 +184,10 @@ load_configuration() {
     for config_file in "${config_files[@]}"; do
         if [[ -r "$config_file" ]]; then
             log_debug "Loading config: $config_file"
-            # For now, we'll use a simple key=value parser
-            # In a full implementation, this would parse YAML
-            load_config_file "$config_file" || log_warn "Failed to load config: $config_file"
+            # Parse YAML and set CONFIG_<tool> variables for tool enablement
+            awk '/^[ ]*[a-zA-Z0-9_-]+:[ ]*(true|auto)/ {gsub(/:/,"",$0); gsub(/[ \t]+/," ",$0); split($0,a," "); key=a[1]; value=a[2]; gsub("-","_",key); print key ":" value}' "$config_file" | while IFS=: read -r key value; do
+                export CONFIG_${key}="$value"
+            done
         else
             log_debug "Config file not found: $config_file"
         fi
@@ -574,9 +375,33 @@ execute_install_command() {
         # Individual tool installation would be handled here
     fi
     
+    # Ensure $BIN_DIR is in PATH
+    ensure_path "$BIN_DIR"
+
+    # Count installed tools in $BIN_DIR
+    local installed_count
+    installed_count=$(ls "$BIN_DIR" 2>/dev/null | wc -l)
+
     # Generate reports
     if ! is_dry_run; then
         generate_final_reports
+    fi
+
+    # Post-install message for PATH
+    if [[ ":$PATH:" != *":$BIN_DIR:"* ]]; then
+        echo
+        echo "[INFO] Installed tools may not be available until you restart your shell or run:"
+        echo "  export PATH=$BIN_DIR:\$PATH"
+        echo
+    fi
+
+    # Error reporting if no tools installed
+    if [[ "$installed_count" -eq 0 ]]; then
+        echo
+        echo "[ERROR] No tools were installed. Please check configuration, permissions, and network connectivity."
+        echo "[ERROR] This will be reported as a failure in the status report."
+        # Optionally, touch a failure marker for reporting logic
+        echo "No tools installed" > "$SCRIPT_DIR/dev_setup_failure.txt"
     fi
 }
 
@@ -685,33 +510,234 @@ main() {
     
     # Parse command-line arguments
     parse_arguments "$@"
-    
-    # Initialize system detection
+
+    # Validate architecture and requirements
+    title "System Validation"
+    # Initialize distro detection to set DISTRO_NAME and PKG_MGR
     initialize_distro_detection
-    
-    # Initialize installer
-    initialize_installer
-    
-    # Initialize security
-    initialize_security
-    
-    # Initialize reporter
-    initialize_reporter
-    
-    # Load configuration
-    load_configuration
-    
-    # Load tool modules
-    load_tool_modules
-    
-    # Execute the requested command
-    execute_command
-    
-    log_info "InSight Dev Bootstrap completed successfully"
-    
-    if [[ "${GENERATE_COMPLIANCE:-false}" == "true" ]]; then
-        log_info "Compliance report generated"
+    echo "OS: $(uname -s) $(uname -r)"
+    echo "Architecture: $(uname -m)"
+    echo "Distribution: ${DISTRO_NAME:-unknown}"
+    echo "Package Manager: ${PKG_MGR:-unknown}"
+
+    # Detect WSL
+    local is_wsl=0
+    if grep -qiE "microsoft|wsl" /proc/version; then
+        is_wsl=1
     fi
+
+    # Define categories and their tools
+    # List all tools and their categories
+    declare -A tool_category
+    tool_category=(
+        [docker]="CONTAINERS"
+        [docker-compose]="CONTAINERS"
+        [podman]="CONTAINERS"
+        [containerd]="CONTAINERS"
+        [kubectl]="KUBERNETES"
+        [helm]="KUBERNETES"
+        [k9s]="KUBERNETES"
+        [terraform]="HASHICORP"
+        [packer]="HASHICORP"
+        [vault]="HASHICORP"
+        [consul]="HASHICORP"
+        [aws-cli]="CLOUD"
+        [gcloud]="CLOUD"
+        [azure-cli]="CLOUD"
+        [bicep]="CLOUD"
+        [powershell]="CLOUD"
+        [pyenv]="DEVTOOLS"
+        [nvm]="DEVTOOLS"
+        [nodejs]="DEVTOOLS"
+        [python]="DEVTOOLS"
+        [rbenv]="DEVTOOLS"
+        [git]="DEVTOOLS"
+        [jq]="DEVTOOLS"
+        [make]="DEVTOOLS"
+        [cmake]="DEVTOOLS"
+        [gcc]="DEVTOOLS"
+        [clang]="DEVTOOLS"
+        [vim]="DEVTOOLS"
+        [nano]="DEVTOOLS"
+        [curl]="DEVTOOLS"
+        [wget]="DEVTOOLS"
+        [vscode]="IDE"
+        [pycharm]="IDE"
+    )
+
+    local all_tools=(docker docker-compose podman containerd kubectl helm k9s terraform packer vault consul aws-cli gcloud azure-cli bicep powershell pyenv nvm nodejs python rbenv git jq make cmake gcc clang vim nano curl wget vscode pycharm)
+
+    echo
+    printf "%-15s %-12s %-18s %-18s %-8s %-28s %-s\n" "Tool" "Category" "Installed" "Current Version" "Latest Version" "On PATH" "Path"
+    printf "%-15s %-12s %-18s %-18s %-8s %-28s %-s\n" "---------------" "------------" "------------------" "------------------" "--------" "----------------------------" "-----------------------------"
+    for tool in "${all_tools[@]}"; do
+        local installed="no"
+        local current_version="-"
+        local latest_version="-"
+        local on_path="no"
+        local tool_path="-"
+        local category="${tool_category[$tool]}"
+
+        # Always show all tools, even if not installed
+        if command_exists "$tool"; then
+            tool_path="$(where_cmd "$tool")"
+            # Filter out Windows executables (mounted drives) in WSL
+            if [[ "$is_wsl" -eq 1 && "$tool_path" =~ ^/mnt/[a-zA-Z]/ ]]; then
+                installed="no"
+                on_path="no"
+                tool_path="-"
+                current_version="-"
+            else
+                installed="yes"
+                on_path="yes"
+                current_version=$(get_local_version "$tool" "--version")
+            fi
+        fi
+
+        # Get latest version (dynamic fetch)
+        case "$tool" in
+            docker)
+                latest_version=$(curl -s https://api.github.com/repos/moby/moby/releases/latest | grep 'tag_name' | head -1 | grep -o '[0-9.]*' || true)
+                [[ -z "$latest_version" ]] && latest_version="-"
+                ;;
+            docker-compose)
+                latest_version=$(curl -s https://api.github.com/repos/docker/compose/releases/latest | grep 'tag_name' | head -1 | grep -o '[0-9.]*' || true)
+                [[ -z "$latest_version" ]] && latest_version="-"
+                ;;
+            podman)
+                latest_version=$(curl -s https://api.github.com/repos/containers/podman/releases/latest | grep 'tag_name' | head -1 | grep -o '[0-9.]*' || true)
+                [[ -z "$latest_version" ]] && latest_version="-"
+                ;;
+            containerd)
+                latest_version=$(curl -s https://api.github.com/repos/containerd/containerd/releases/latest | grep 'tag_name' | head -1 | grep -o '[0-9.]*' || true)
+                [[ -z "$latest_version" ]] && latest_version="-"
+                ;;
+            kubectl)
+                latest_version=$(curl -sL https://dl.k8s.io/release/stable.txt 2>/dev/null || true)
+                [[ "$latest_version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || latest_version="-"
+                ;;
+            helm)
+                latest_version=$(curl -s https://api.github.com/repos/helm/helm/releases/latest | grep 'tag_name' | head -1 | grep -o 'v[0-9.]*' || true)
+                [[ -z "$latest_version" ]] && latest_version="-"
+                ;;
+            k9s)
+                latest_version=$(curl -s https://api.github.com/repos/derailed/k9s/releases/latest | grep 'tag_name' | head -1 | grep -o '[0-9.]*' || true)
+                [[ -z "$latest_version" ]] && latest_version="-"
+                ;;
+            terraform)
+                latest_version=$(curl -s https://api.github.com/repos/hashicorp/terraform/releases/latest | grep 'tag_name' | head -1 | grep -o '[0-9.]*' || true)
+                [[ -z "$latest_version" ]] && latest_version="-"
+                ;;
+            packer)
+                latest_version=$(curl -s https://api.github.com/repos/hashicorp/packer/releases/latest | grep 'tag_name' | head -1 | grep -o '[0-9.]*' || true)
+                [[ -z "$latest_version" ]] && latest_version="-"
+                ;;
+            vault)
+                latest_version=$(curl -s https://api.github.com/repos/hashicorp/vault/releases/latest | grep 'tag_name' | head -1 | grep -o '[0-9.]*' || true)
+                [[ -z "$latest_version" ]] && latest_version="-"
+                ;;
+            consul)
+                latest_version=$(curl -s https://api.github.com/repos/hashicorp/consul/releases/latest | grep 'tag_name' | head -1 | grep -o '[0-9.]*' || true)
+                [[ -z "$latest_version" ]] && latest_version="-"
+                ;;
+            bicep)
+                latest_version=$(curl -s https://api.github.com/repos/Azure/bicep/releases/latest | grep 'tag_name' | head -1 | grep -o '[0-9.]*' || true)
+                [[ -z "$latest_version" ]] && latest_version="-"
+                ;;
+            aws-cli)
+                latest_version=$(curl -s https://api.github.com/repos/aws/aws-cli/releases/latest | grep 'tag_name' | head -1 | grep -o '[0-9.]*' || true)
+                [[ -z "$latest_version" ]] && latest_version="-"
+                ;;
+            gcloud)
+                latest_version=$(curl -s https://dl.google.com/dl/cloudsdk/channels/rapid/components-2.json | grep -o '"version": "[0-9.]*"' | head -1 | grep -o '[0-9.]*' || true)
+                [[ -z "$latest_version" ]] && latest_version="-"
+                ;;
+            azure-cli)
+                latest_version=$(curl -s https://api.github.com/repos/Azure/azure-cli/releases/latest | grep 'tag_name' | head -1 | grep -o '[0-9.]*' || true)
+                [[ -z "$latest_version" ]] && latest_version="-"
+                ;;
+            powershell)
+                latest_version=$(curl -s https://api.github.com/repos/PowerShell/PowerShell/releases/latest | grep 'tag_name' | head -1 | grep -o '[0-9.]*' || true)
+                [[ -z "$latest_version" ]] && latest_version="-"
+                ;;
+            pyenv)
+                latest_version=$(curl -s https://api.github.com/repos/pyenv/pyenv/releases/latest | grep 'tag_name' | head -1 | grep -o '[0-9.]*' || true)
+                [[ -z "$latest_version" ]] && latest_version="-"
+                ;;
+            nvm)
+                latest_version=$(curl -s https://api.github.com/repos/nvm-sh/nvm/releases/latest | grep 'tag_name' | head -1 | grep -o '[0-9.]*' || true)
+                [[ -z "$latest_version" ]] && latest_version="-"
+                ;;
+            nodejs)
+                latest_version=$(curl -s https://api.github.com/repos/nodejs/node/releases/latest | grep 'tag_name' | head -1 | grep -o '[0-9.]*' || true)
+                [[ -z "$latest_version" ]] && latest_version="-"
+                ;;
+            python)
+                latest_version=$(curl -s https://api.github.com/repos/python/cpython/releases/latest | grep 'tag_name' | head -1 | grep -o '[0-9.]*' || true)
+                [[ -z "$latest_version" ]] && latest_version="-"
+                ;;
+            rbenv)
+                latest_version=$(curl -s https://api.github.com/repos/rbenv/rbenv/releases/latest | grep 'tag_name' | head -1 | grep -o '[0-9.]*' || true)
+                [[ -z "$latest_version" ]] && latest_version="-"
+                ;;
+            git)
+                latest_version=$(curl -s https://api.github.com/repos/git/git/releases/latest | grep 'tag_name' | head -1 | grep -o '[0-9.]*' || true)
+                [[ -z "$latest_version" ]] && latest_version="-"
+                ;;
+            jq)
+                latest_version=$(curl -s https://api.github.com/repos/stedolan/jq/releases/latest | grep 'tag_name' | head -1 | grep -o '[0-9.]*' || true)
+                [[ -z "$latest_version" ]] && latest_version="-"
+                ;;
+            make)
+                latest_version=$(curl -s https://api.github.com/repos/GNUMake/make/releases/latest | grep 'tag_name' | head -1 | grep -o '[0-9.]*' || true)
+                [[ -z "$latest_version" ]] && latest_version="-"
+                ;;
+            cmake)
+                latest_version=$(curl -s https://api.github.com/repos/Kitware/CMake/releases/latest | grep 'tag_name' | head -1 | grep -o '[0-9.]*' || true)
+                [[ -z "$latest_version" ]] && latest_version="-"
+                ;;
+            gcc)
+                latest_version=$(curl -s https://api.github.com/repos/gcc-mirror/gcc/releases/latest | grep 'tag_name' | head -1 | grep -o '[0-9.]*' || true)
+                [[ -z "$latest_version" ]] && latest_version="-"
+                ;;
+            clang)
+                latest_version=$(curl -s https://api.github.com/repos/llvm/llvm-project/releases/latest | grep 'tag_name' | head -1 | grep -o '[0-9.]*' || true)
+                [[ -z "$latest_version" ]] && latest_version="-"
+                ;;
+            vim)
+                latest_version=$(curl -s https://api.github.com/repos/vim/vim/releases/latest | grep 'tag_name' | head -1 | grep -o '[0-9.]*' || true)
+                [[ -z "$latest_version" ]] && latest_version="-"
+                ;;
+            nano)
+                latest_version=$(curl -s https://api.github.com/repos/nanorc/nano/releases/latest | grep 'tag_name' | head -1 | grep -o '[0-9.]*' || true)
+                [[ -z "$latest_version" ]] && latest_version="-"
+                ;;
+            curl)
+                latest_version=$(curl -s https://api.github.com/repos/curl/curl/releases/latest | grep 'tag_name' | head -1 | grep -o '[0-9.]*' || true)
+                [[ -z "$latest_version" ]] && latest_version="-"
+                ;;
+            wget)
+                latest_version=$(curl -s https://api.github.com/repos/mirror/wget/releases/latest | grep 'tag_name' | head -1 | grep -o '[0-9.]*' || true)
+                [[ -z "$latest_version" ]] && latest_version="-"
+                ;;
+            vscode)
+                latest_version=$(curl -s https://api.github.com/repos/microsoft/vscode/releases/latest | grep 'tag_name' | head -1 | grep -o '[0-9.]*' || true)
+                [[ -z "$latest_version" ]] && latest_version="-"
+                ;;
+            pycharm)
+                latest_version=$(curl -s https://data.services.jetbrains.com/products/releases?code=PCP&latest=true&type=release 2>/dev/null | grep -o '"version":"[0-9.]*"' | head -1 | grep -o '[0-9.]*')
+                [[ -z "$latest_version" ]] && latest_version="-"
+                ;;
+            *)
+                latest_version="-"
+                ;;
+        esac
+
+        printf "%-15s %-12s %-18s %-18s %-8s %-28s %-s\n" "$tool" "$category" "$installed" "$current_version" "$latest_version" "$on_path" "$tool_path"
+    done
+
+    echo
+    log_info "System validation and tool status completed."
 }
 
 # ---------- Error Handling ----------

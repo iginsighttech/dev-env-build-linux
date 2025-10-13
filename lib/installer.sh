@@ -277,6 +277,10 @@ install_system_packages() {
     
     # Install packages
     local install_cmd="$PKG_INSTALL ${packages[*]}"
+        # Add --allowerasing for dnf/yum to resolve package conflicts (e.g., curl/curl-minimal)
+        if [[ "$PKG_MGR" == "dnf" || "$PKG_MGR" == "yum" ]]; then
+            install_cmd="$PKG_MGR install -y --allowerasing ${packages[*]}"
+        fi
     log_debug "Running: $install_cmd"
     
     if eval "$install_cmd"; then
