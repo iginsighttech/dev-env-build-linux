@@ -1,3 +1,38 @@
+print_status_table() {
+    printf "%-20s %-15s %-15s %-15s %-10s %-30s %-10s %-8s\n" "Tool" "Category" "Local Ver" "Latest Ver" "Status" "Path" "Verified" "On Path"
+    for result in "${TOOL_RESULTS[@]}"; do
+        IFS='|' read -r name category local_version latest_version status path verified on_path <<< "$result"
+        printf "%-20s %-15s %-15s %-15s %-10s %-30s %-10s %-8s\n" "$name" "$category" "$local_version" "$latest_version" "$status" "$path" "$verified" "$on_path"
+    done
+}
+
+print_summary() {
+    local total=${#TOOL_RESULTS[@]}
+    local installed=0
+    for result in "${TOOL_RESULTS[@]}"; do
+        IFS='|' read -r _ _ _ _ status _ _ <<< "$result"
+        [[ "$status" == "installed" ]] && ((installed++))
+    done
+    echo "Summary: $installed/$total tools installed."
+}
+#!/usr/bin/env bash
+log_info() {
+    # Wrapper for info logging
+    echo "[INFO] $@"
+}
+
+log_warn() {
+    # Wrapper for warning logging
+    echo "[WARN] $@"
+}
+
+log_error() {
+    # Wrapper for error logging
+    echo "[ERROR] $@"
+}
+#!/usr/bin/env bash
+# =====================================================================
+# InSight Dev Bootstrap - Status Reporting Library
 #!/usr/bin/env bash
 # =====================================================================
 # InSight Dev Bootstrap - Status Reporting Library
@@ -25,7 +60,7 @@ add_tool_result() {
     local path="$6"
     local verified="${7:-unknown}"
     
-    local result="${name}|${category}|${local_version}|${latest_version}|${status}|${path}|${verified}"
+    local result="${name}|${category}|${local_version}|${latest_version}|${status}|${path}|${verified}|${on_path}"
     TOOL_RESULTS+=("$result")
     
     log_debug "Added result: $name ($status)"
@@ -53,74 +88,20 @@ calculate_summary_stats() {
     for result in "${TOOL_RESULTS[@]}"; do
         IFS='|' read -r name category local_ver latest_ver status path verified_status <<< "$result"
         ((total++))
-        
         case "$status" in
             installed|current) ((installed++)) ;;
             outdated) ((outdated++)); ((installed++)) ;;
             failed|error) ((failed++)) ;;
         esac
-        
         case "$verified_status" in
             verified|true) ((verified++)) ;;
         esac
     done
-    
-    # Export summary variables
-    export SUMMARY_TOTAL="$total"
-    export SUMMARY_INSTALLED="$installed"
-    export SUMMARY_OUTDATED="$outdated"
-    export SUMMARY_FAILED="$failed"
-    export SUMMARY_VERIFIED="$verified"
-}
-
-# ---------- Console Output ----------
-print_status_table() {
-    local show_header="${1:-true}"
-    
-    if [[ "$show_header" == "true" ]]; then
-        title "Installation Status Report"
-        printf "%-20s %-12s %-12s %-12s %-8s %-10s %s\n" \
-            "Tool" "Category" "Installed" "Latest" "Status" "Verified" "Location"
-        printf "%-20s %-12s %-12s %-12s %-8s %-10s %s\n" \
-            "$(printf '%.20s' '────────────────────')" \
-            "$(printf '%.12s' '────────────')" \
-            "$(printf '%.12s' '────────────')" \
-            "$(printf '%.12s' '────────────')" \
-            "$(printf '%.8s' '────────')" \
-            "$(printf '%.10s' '──────────')" \
-            "$(printf '%.30s' '──────────────────────────────')"
-    fi
-    
-    for result in "${TOOL_RESULTS[@]}"; do
-        IFS='|' read -r name category local_ver latest_ver status path verified_status <<< "$result"
-        
-        # Format status with colors
-        local status_colored
-        case "$status" in
-            installed|current) status_colored=$(green "$status") ;;
-            outdated) status_colored=$(yellow "$status") ;;
-            failed|error) status_colored=$(red "$status") ;;
-            not_found) status_colored=$(red "missing") ;;
-            *) status_colored="$status" ;;
-        esac
-        
-        # Format verification status
-        local verified_colored
-        case "$verified_status" in
-            verified|true) verified_colored=$(green "✓") ;;
-            failed|false) verified_colored=$(red "✗") ;;
-            *) verified_colored=$(yellow "?") ;;
-        esac
-        
-        printf "%-20s %-12s %-12s %-12s %-8s %-10s %s\n" \
-            "$name" \
-            "$category" \
-            "${local_ver:-"-"}" \
-            "${latest_ver:-"-"}" \
-            "$status_colored" \
-            "$verified_colored" \
-            "${path:-"-"}"
-    done
+    SUMMARY_TOTAL=$total
+    SUMMARY_INSTALLED=$installed
+    SUMMARY_OUTDATED=$outdated
+    SUMMARY_FAILED=$failed
+    SUMMARY_VERIFIED=$verified
 }
 
 print_summary() {

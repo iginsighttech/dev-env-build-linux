@@ -27,18 +27,7 @@ PROFILE_RC=""
 # ---------- Path Management ----------
 setup_installation_paths() {
     if [[ "${USER_MODE:-0}" == "1" ]] || ! is_root; then
-        INSTALL_MODE="$MODE_USER"
-        BIN_DIR="${HOME}/.local/bin"
-        OPT_DIR="${HOME}/.devtools"
-        PROFILE_RC="${HOME}/.bashrc"
-        
-        log_info "User-mode installation: $BIN_DIR"
-    else
-        INSTALL_MODE="$MODE_SYSTEM"
-        BIN_DIR="/usr/local/bin"
-        OPT_DIR="/opt/devtools"
-        PROFILE_RC="/etc/profile.d/devtools-path.sh"
-        
+        #!/usr/bin/env bash
         log_info "System-wide installation: $BIN_DIR"
     fi
     
