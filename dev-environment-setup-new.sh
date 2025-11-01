@@ -105,7 +105,21 @@ trap 'handle_error $LINENO' ERR
 # Entrypoint
 main() {
     parse_arguments "$@"
+    # Require a switch (install or check) before any logic
+    if [[ -z "${1:-}" || ( "${1:-}" != "install" && "${1:-}" != "check" ) ]]; then
+        echo "[ERROR] You must run this script with either 'install' or 'check' as the first argument."
+        echo "Usage: $0 install [options] OR $0 check [options]"
+        exit 1
+    fi
     load_configuration
+    # Detect --force-latest argument for check command
+    FORCE_LATEST=0
+    for arg in "$@"; do
+        if [[ "$arg" == "--force-latest" ]]; then
+            FORCE_LATEST=1
+        fi
+    done
+    export FORCE_LATEST
     run_main_logic "$@"
 }
 
