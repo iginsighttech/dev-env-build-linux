@@ -40,7 +40,7 @@ red()   { printf "%s%s%s\n" "$COLOR_RED" "$*" "$COLOR_RESET"; }
 blue()  { printf "%s%s%s\n" "$COLOR_BLUE" "$*" "$COLOR_RESET"; }
 bold()  { printf "%s%s%s\n" "$COLOR_BOLD" "$*" "$COLOR_RESET"; }
 
-title() { cyan "\n=== $* ==="; }
+title() { echo; cyan "=== $* ==="; }
 info()  { green "[INFO] $*"; }
 warn()  { yellow "[WARN] $*"; }
 error() { red "[ERROR] $*"; }
@@ -164,8 +164,11 @@ get_local_version() {
     local path
     
     path=$(where_cmd "$cmd")
-    [[ -z "$path" ]] && return 1
-    
+    if [[ -z "$path" ]]; then
+        echo ""
+        return 0
+    fi
+
     local output
     output=$(run_with_timeout "$DEFAULT_TIMEOUT" "$path" $args)
     get_version_from_output "$output" "$regex"
@@ -194,7 +197,7 @@ download_file() {
         fi
         
         log_warn "Download attempt $attempt failed for $url"
-        ((attempt++))
+        attempt=$((attempt + 1))
         [[ $attempt -le $retries ]] && sleep $((attempt * 2))
     done
     

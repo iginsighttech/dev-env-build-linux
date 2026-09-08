@@ -3,15 +3,22 @@
 # Generated on 2025-10-11
 # Includes: bash
 
+### InSight Dev Bootstrap runtime output ###
+# check/install/upgrade write these into the repo root by default
+# (base_name "dev_setup_status", format extension csv/json/txt/html/md)
+# unless --output-dir is given.
+dev_setup_status_*
+compliance_report_*.json
+security_report_*.json
+
 ### Universal ###
 # Common files that should be ignored in all projects
 
 # Logs
 *.log
-# Temporary and Old labeled files
+# Temporary and Old files
 *.tmp
 *~
-*old*
 *.old
 *.bak
 
@@ -19,15 +26,6 @@
 .env
 *.env
 .env.*
-
-# Test and Debug Files
-*test*
-tests/*
-*debug*
-
-# Copilot related files
-copilot*
-*copilot*
 
 # Local configuration that shouldn't be shared
 *.local

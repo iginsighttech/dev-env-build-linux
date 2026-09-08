@@ -52,16 +52,16 @@ calculate_summary_stats() {
     
     for result in "${TOOL_RESULTS[@]}"; do
         IFS='|' read -r name category local_ver latest_ver status path verified_status <<< "$result"
-        ((total++))
-        
+        total=$((total + 1))
+
         case "$status" in
-            installed|current) ((installed++)) ;;
-            outdated) ((outdated++)); ((installed++)) ;;
-            failed|error) ((failed++)) ;;
+            installed|current) installed=$((installed + 1)) ;;
+            outdated) outdated=$((outdated + 1)); installed=$((installed + 1)) ;;
+            failed|error) failed=$((failed + 1)) ;;
         esac
-        
+
         case "$verified_status" in
-            verified|true) ((verified++)) ;;
+            verified|true) verified=$((verified + 1)) ;;
         esac
     done
     
@@ -82,13 +82,7 @@ print_status_table() {
         printf "%-20s %-12s %-12s %-12s %-8s %-10s %s\n" \
             "Tool" "Category" "Installed" "Latest" "Status" "Verified" "Location"
         printf "%-20s %-12s %-12s %-12s %-8s %-10s %s\n" \
-            "$(printf '%.20s' '────────────────────')" \
-            "$(printf '%.12s' '────────────')" \
-            "$(printf '%.12s' '────────────')" \
-            "$(printf '%.12s' '────────────')" \
-            "$(printf '%.8s' '────────')" \
-            "$(printf '%.10s' '──────────')" \
-            "$(printf '%.30s' '──────────────────────────────')"
+            "--------------------" "------------" "------------" "------------" "--------" "----------" "------------------------------"
     fi
     
     for result in "${TOOL_RESULTS[@]}"; do

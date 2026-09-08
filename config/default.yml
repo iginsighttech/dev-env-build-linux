@@ -42,7 +42,7 @@ tools:
   aws-cli: true
   gcloud: true
   bicep: true
-  azure-cli : true
+  azure-cli: true
   
   # Development tools
   pyenv: true

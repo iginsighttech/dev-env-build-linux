@@ -1,103 +1,89 @@
 #!/usr/bin/env bash
-# HashiCorp tools installer module
+# =====================================================================
+# InSight Dev Bootstrap - HashiCorp Tools Module
 # Supports: terraform, packer, vault, consul
+# =====================================================================
+
+# Prevent multiple inclusion
+[[ "${HASHICORP_MODULE_LOADED:-}" == "true" ]] && return 0
+readonly HASHICORP_MODULE_LOADED="true"
+
+# shellcheck disable=SC1091
+source "${BASH_SOURCE[0]%/*}/../lib/common.sh"
+# shellcheck disable=SC1091
+source "${BASH_SOURCE[0]%/*}/../lib/installer.sh"
+# shellcheck disable=SC1091
+source "${BASH_SOURCE[0]%/*}/../lib/versioncheck.sh"
+
+readonly HASHICORP_CATEGORY="hashicorp"
+
+# Fallback versions used only if a package-manager install fails and we
+# have to fall back to downloading a zip directly from releases.hashicorp.com
+declare -A HASHICORP_FALLBACK_VERSION=(
+    [terraform]="1.8.5"
+    [packer]="1.10.2"
+    [vault]="1.16.2"
+    [consul]="1.18.2"
+)
+
+# ---------- Module Interface Functions ----------
+hashicorp_check() {
+    log_debug "Checking hashicorp tools status"
+
+    local tool version latest
+    for tool in terraform packer vault consul; do
+        version=$(get_local_version "$tool" "--version" '[0-9]+(\.[0-9]+)+')
+        latest=$(get_latest_version_cached "$tool")
+        if [[ -n "$version" ]]; then
+            add_tool_result "$tool" "$HASHICORP_CATEGORY" "$version" "$latest" "installed" "$(where_cmd "$tool")" "verified"
+        else
+            add_tool_result "$tool" "$HASHICORP_CATEGORY" "" "$latest" "not_found" "" "unknown"
+        fi
+    done
+}
 
 install_hashicorp_tools() {
     local tools="${1:-}" # comma-separated list
-        local silent_mode="${SILENT:-0}"
-        if [[ "$silent_mode" -eq 1 ]]; then
-            log_info "Installing hashicorp tools silently: $tools"
-            # ...actual install logic here, silent mode...
-        else
-            log_info "Installing hashicorp tools (verbose): $tools"
-            # ...actual install logic here, verbose mode...
-        fi
+    local silent_mode="${SILENT:-0}"
     IFS=',' read -ra tool_array <<< "$tools"
+
     for tool in "${tool_array[@]}"; do
         tool=$(trim "$tool")
         case "$tool" in
-            terraform)
-                local bin="$BIN_DIR/terraform"
-                rm -f "$bin"
-                if [[ "$silent_mode" -eq 1 ]]; then
-                    $PKG_MGR install -y terraform &>/dev/null || {
-                        curl -sLo /tmp/terraform.zip https://releases.hashicorp.com/terraform/1.8.5/terraform_1.8.5_linux_amd64.zip
-                        unzip -qq /tmp/terraform.zip -d /tmp
-                        mv -f /tmp/terraform "$bin"
-                        chmod +x "$bin"
-                        rm -f /tmp/terraform.zip /tmp/terraform
-                    }
-                else
-                    $PKG_MGR install -y terraform || {
-                        curl -Lo /tmp/terraform.zip https://releases.hashicorp.com/terraform/1.8.5/terraform_1.8.5_linux_amd64.zip
-                        unzip /tmp/terraform.zip -d /tmp
-                        mv -f /tmp/terraform "$bin"
-                        chmod +x "$bin"
-                        rm -f /tmp/terraform.zip /tmp/terraform
-                    }
+            terraform|packer|vault|consul)
+                local latest
+                latest=$(get_latest_version_cached "$tool")
+
+                if is_dry_run; then
+                    log_info "DRY-RUN: Would install $tool"
+                    add_tool_result "$tool" "$HASHICORP_CATEGORY" "" "$latest" "would_install" "" "pending"
+                    continue
                 fi
-                ;;
-            packer)
-                local bin="$BIN_DIR/packer"
+
+                local bin="$BIN_DIR/$tool"
                 rm -f "$bin"
-                if [[ "$silent_mode" -eq 1 ]]; then
-                    $PKG_MGR install -y packer &>/dev/null || {
-                        curl -sLo /tmp/packer.zip https://releases.hashicorp.com/packer/1.10.2/packer_1.10.2_linux_amd64.zip
-                        unzip -qq /tmp/packer.zip -d /tmp
-                        mv -f /tmp/packer "$bin"
-                        chmod +x "$bin"
-                        rm -f /tmp/packer.zip /tmp/packer
-                    }
-                else
-                    $PKG_MGR install -y packer || {
-                        curl -Lo /tmp/packer.zip https://releases.hashicorp.com/packer/1.10.2/packer_1.10.2_linux_amd64.zip
-                        unzip /tmp/packer.zip -d /tmp
-                        mv -f /tmp/packer "$bin"
-                        chmod +x "$bin"
-                        rm -f /tmp/packer.zip /tmp/packer
-                    }
+                local fallback_version="${HASHICORP_FALLBACK_VERSION[$tool]}"
+                local arch
+                arch=$(map_arch_for_vendor "$(detect_architecture)" "hashicorp")
+
+                local pkg_ok=1
+                if install_system_packages "$tool"; then pkg_ok=0; fi
+
+                if [[ "$pkg_ok" -ne 0 ]]; then
+                    curl -sLo "/tmp/${tool}.zip" "https://releases.hashicorp.com/${tool}/${fallback_version}/${tool}_${fallback_version}_linux_${arch}.zip"
+                    unzip -qq -o "/tmp/${tool}.zip" -d /tmp
+                    mv -f "/tmp/${tool}" "$bin"
+                    chmod +x "$bin"
+                    rm -f "/tmp/${tool}.zip" "/tmp/${tool}"
                 fi
-                ;;
-            vault)
-                local bin="$BIN_DIR/vault"
-                rm -f "$bin"
-                if [[ "$silent_mode" -eq 1 ]]; then
-                    $PKG_MGR install -y vault &>/dev/null || {
-                        curl -sLo /tmp/vault.zip https://releases.hashicorp.com/vault/1.16.2/vault_1.16.2_linux_amd64.zip
-                        unzip -qq /tmp/vault.zip -d /tmp
-                        mv -f /tmp/vault "$bin"
-                        chmod +x "$bin"
-                        rm -f /tmp/vault.zip /tmp/vault
-                    }
+
+                local installed_version
+                installed_version=$(get_local_version "$tool" "--version" '[0-9]+(\.[0-9]+)+')
+                if [[ -n "$installed_version" ]]; then
+                    add_tool_result "$tool" "$HASHICORP_CATEGORY" "$installed_version" "$latest" "installed" "$(where_cmd "$tool")" "verified"
                 else
-                    $PKG_MGR install -y vault || {
-                        curl -Lo /tmp/vault.zip https://releases.hashicorp.com/vault/1.16.2/vault_1.16.2_linux_amd64.zip
-                        unzip /tmp/vault.zip -d /tmp
-                        mv -f /tmp/vault "$bin"
-                        chmod +x "$bin"
-                        rm -f /tmp/vault.zip /tmp/vault
-                    }
-                fi
-                ;;
-            consul)
-                local bin="$BIN_DIR/consul"
-                rm -f "$bin"
-                if [[ "$silent_mode" -eq 1 ]]; then
-                    $PKG_MGR install -y consul &>/dev/null || {
-                        curl -sLo /tmp/consul.zip https://releases.hashicorp.com/consul/1.18.2/consul_1.18.2_linux_amd64.zip
-                        unzip -qq /tmp/consul.zip -d /tmp
-                        mv -f /tmp/consul "$bin"
-                        chmod +x "$bin"
-                        rm -f /tmp/consul.zip /tmp/consul
-                    }
-                else
-                    $PKG_MGR install -y consul || {
-                        curl -Lo /tmp/consul.zip https://releases.hashicorp.com/consul/1.18.2/consul_1.18.2_linux_amd64.zip
-                        unzip /tmp/consul.zip -d /tmp
-                        mv -f /tmp/consul "$bin"
-                        chmod +x "$bin"
-                        rm -f /tmp/consul.zip /tmp/consul
-                    }
+                    log_error "$tool installation verification failed"
+                    add_tool_result "$tool" "$HASHICORP_CATEGORY" "" "$latest" "failed" "" "failed"
                 fi
                 ;;
             *)
@@ -107,6 +93,11 @@ install_hashicorp_tools() {
     done
 }
 
+hashicorp_upgrade() {
+    log_info "Upgrading hashicorp tools"
+    install_hashicorp_tools "terraform,packer,vault,consul"
+}
+
 if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
-    export -f install_hashicorp_tools
+    export -f install_hashicorp_tools hashicorp_check hashicorp_upgrade
 fi

@@ -6,22 +6,22 @@ A modular, enterprise-ready Linux development environment setup tool for automat
 
 ```bash
 # System-wide installation (requires root)
-sudo ./dev-environment-setup-new.sh install
+sudo ./dev-environment-setup.sh install
 
 # User-scope installation
-./dev-environment-setup-new.sh install --user
+./dev-environment-setup.sh install --user
 
 # Dry run to see what would be installed
-./dev-environment-setup-new.sh install --dry-run
+./dev-environment-setup.sh install --dry-run
 
 # Check current status only
-./dev-environment-setup-new.sh check
+./dev-environment-setup.sh check
 
 # Install specific categories
-./dev-environment-setup-new.sh install --categories containers,cloud
+./dev-environment-setup.sh install --categories containers,cloud
 
 # Install specific tools
-./dev-environment-setup-new.sh install --tools docker,kubectl,terraform,powershell
+./dev-environment-setup.sh install --tools docker,kubectl,terraform,powershell
 ```
 
 ## 📋 Features
@@ -72,7 +72,7 @@ sudo ./dev-environment-setup-new.sh install
 
 ```
 dev-env-build-linux/
-├── dev-environment-setup-new.sh    # Main entry point (modular)
+├── dev-environment-setup.sh    # Main entry point (modular)
 ├── lib/                           # Core library functions
 │   ├── common.sh                  # Shared utilities
 │   ├── distro.sh                  # OS/distribution detection
@@ -102,30 +102,30 @@ dev-env-build-linux/
 
 ### System-wide Installation
 ```bash
-sudo ./dev-environment-setup-new.sh install
+sudo ./dev-environment-setup.sh install
 ```
 
 ### User-scope Installation
 ```bash
-./dev-environment-setup-new.sh install --user
+./dev-environment-setup.sh install --user
 ```
 
 ### Configuration-based Installation
 ```bash
-./dev-environment-setup-new.sh install --config config/enterprise.yml
-./dev-environment-setup-new.sh install --config config/minimal.yml --tools +terraform
+./dev-environment-setup.sh install --config config/enterprise.yml
+./dev-environment-setup.sh install --config config/minimal.yml --tools +terraform
 ```
 
 ### Advanced Usage
-- Dry run: `./dev-environment-setup-new.sh install --dry-run`
-- Status check: `./dev-environment-setup-new.sh check`
-- Selective install: `./dev-environment-setup-new.sh install --categories containers,cloud`
-- Individual tools: `./dev-environment-setup-new.sh install --tools docker,kubectl,terraform,powershell`
-- Version pinning: `./dev-environment-setup-new.sh install --versions terraform=1.5.0,kubectl=1.27.0`
-- Upgrade: `./dev-environment-setup-new.sh upgrade`
-- Force reinstall: `./dev-environment-setup-new.sh install --force`
-- Security: `./dev-environment-setup-new.sh install --verify-signatures`
-- Compliance: `./dev-environment-setup-new.sh install --compliance-report`
+- Dry run: `./dev-environment-setup.sh install --dry-run`
+- Status check: `./dev-environment-setup.sh check`
+- Selective install: `./dev-environment-setup.sh install --categories containers,cloud`
+- Individual tools: `./dev-environment-setup.sh install --tools docker,kubectl,terraform,powershell`
+- Version pinning: `./dev-environment-setup.sh install --versions terraform=1.5.0,kubectl=1.27.0`
+- Upgrade: `./dev-environment-setup.sh upgrade`
+- Force reinstall: `./dev-environment-setup.sh install --force`
+- Security: `./dev-environment-setup.sh install --verify-signatures`
+- Compliance: `./dev-environment-setup.sh install --compliance-report`
 
 ## 📊 Output & Reporting
 - Console output: colored, real-time status

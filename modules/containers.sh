@@ -15,6 +15,8 @@ source "${BASH_SOURCE[0]%/*}/../lib/common.sh"
 source "${BASH_SOURCE[0]%/*}/../lib/installer.sh"
 # shellcheck disable=SC1091
 source "${BASH_SOURCE[0]%/*}/../lib/security.sh"
+# shellcheck disable=SC1091
+source "${BASH_SOURCE[0]%/*}/../lib/versioncheck.sh"
 
 # ---------- Module Configuration ----------
 readonly CONTAINERS_CATEGORY="containers"
@@ -338,34 +340,48 @@ install_containerd() {
 # ---------- Module Interface Functions ----------
 containers_check() {
     log_debug "Checking container tools status"
-    
+
     # Check Docker
-    local docker_version
+    local docker_version docker_latest
     docker_version=$(get_local_version "docker" "--version" '[0-9]+(\.[0-9]+)+')
+    docker_latest=$(get_latest_version_cached "docker")
     if [[ -n "$docker_version" ]]; then
-        add_tool_result "Docker Engine" "$CONTAINERS_CATEGORY" "$docker_version" "latest" "installed" "$(where_cmd docker)" "verified"
+        add_tool_result "Docker Engine" "$CONTAINERS_CATEGORY" "$docker_version" "$docker_latest" "installed" "$(where_cmd docker)" "verified"
     else
-        add_tool_result "Docker Engine" "$CONTAINERS_CATEGORY" "" "latest" "not_found" "" "unknown"
+        add_tool_result "Docker Engine" "$CONTAINERS_CATEGORY" "" "$docker_latest" "not_found" "" "unknown"
     fi
-    
+
     # Check Docker Compose
-    local compose_version
+    local compose_version compose_latest
+    compose_latest=$(get_latest_version_cached "docker-compose")
+    compose_version=$(get_local_version "docker-compose" "--version" '[0-9]+(\.[0-9]+)+')
     if command_exists docker && docker compose version >/dev/null 2>&1; then
         compose_version=$(docker compose version --short 2>/dev/null || echo "plugin")
-        add_tool_result "Docker Compose" "$CONTAINERS_CATEGORY" "$compose_version" "latest" "installed" "docker-compose-plugin" "verified"
-    elif compose_version=$(get_local_version "docker-compose" "--version" '[0-9]+(\.[0-9]+)+'); then
-        add_tool_result "Docker Compose" "$CONTAINERS_CATEGORY" "$compose_version" "latest" "installed" "$(where_cmd docker-compose)" "verified"
+        add_tool_result "Docker Compose" "$CONTAINERS_CATEGORY" "$compose_version" "$compose_latest" "installed" "docker-compose-plugin" "verified"
+    elif [[ -n "$compose_version" ]]; then
+        add_tool_result "Docker Compose" "$CONTAINERS_CATEGORY" "$compose_version" "$compose_latest" "installed" "$(where_cmd docker-compose)" "verified"
     else
-        add_tool_result "Docker Compose" "$CONTAINERS_CATEGORY" "" "latest" "not_found" "" "unknown"
+        add_tool_result "Docker Compose" "$CONTAINERS_CATEGORY" "" "$compose_latest" "not_found" "" "unknown"
     fi
-    
+
     # Check Podman
-    local podman_version
+    local podman_version podman_latest
     podman_version=$(get_local_version "podman" "--version" '[0-9]+(\.[0-9]+)+')
+    podman_latest=$(get_latest_version_cached "podman")
     if [[ -n "$podman_version" ]]; then
-        add_tool_result "Podman" "$CONTAINERS_CATEGORY" "$podman_version" "latest" "installed" "$(where_cmd podman)" "verified"
+        add_tool_result "Podman" "$CONTAINERS_CATEGORY" "$podman_version" "$podman_latest" "installed" "$(where_cmd podman)" "verified"
     else
-        add_tool_result "Podman" "$CONTAINERS_CATEGORY" "" "latest" "not_found" "" "unknown"
+        add_tool_result "Podman" "$CONTAINERS_CATEGORY" "" "$podman_latest" "not_found" "" "unknown"
+    fi
+
+    # Check containerd
+    local containerd_version containerd_latest
+    containerd_version=$(get_local_version "containerd" "--version" '[0-9]+(\.[0-9]+)+')
+    containerd_latest=$(get_latest_version_cached "containerd")
+    if [[ -n "$containerd_version" ]]; then
+        add_tool_result "containerd" "$CONTAINERS_CATEGORY" "$containerd_version" "$containerd_latest" "installed" "$(where_cmd containerd)" "verified"
+    else
+        add_tool_result "containerd" "$CONTAINERS_CATEGORY" "" "$containerd_latest" "not_found" "" "unknown"
     fi
 }
 
@@ -383,43 +399,37 @@ containers_install() {
     fi
     for tool in "${tool_array[@]}"; do
         tool=$(trim "$tool")
+        local pkg=""
         case "$tool" in
-            docker|docker-engine)
-                local silent_mode="${SILENT:-0}"
-                if [[ "$silent_mode" -eq 1 ]]; then
-                    $PKG_MGR install -y docker &>/dev/null
-                else
-                    $PKG_MGR install -y docker
-                fi
-                ;;
-            docker-compose|compose)
-                local silent_mode="${SILENT:-0}"
-                if [[ "$silent_mode" -eq 1 ]]; then
-                    $PKG_MGR install -y docker-compose &>/dev/null
-                else
-                    $PKG_MGR install -y docker-compose
-                fi
-                ;;
-            podman)
-                local silent_mode="${SILENT:-0}"
-                if [[ "$silent_mode" -eq 1 ]]; then
-                    $PKG_MGR install -y podman &>/dev/null
-                else
-                    $PKG_MGR install -y podman
-                fi
-                ;;
-            containerd)
-                local silent_mode="${SILENT:-0}"
-                if [[ "$silent_mode" -eq 1 ]]; then
-                    $PKG_MGR install -y containerd &>/dev/null
-                else
-                    $PKG_MGR install -y containerd
-                fi
-                ;;
+            docker|docker-engine) pkg="docker" ;;
+            docker-compose|compose) pkg="docker-compose" ;;
+            podman) pkg="podman" ;;
+            containerd) pkg="containerd" ;;
             *)
                 log_warn "Unknown container tool: $tool"
+                continue
                 ;;
         esac
+
+        local latest
+        latest=$(get_latest_version_cached "$pkg")
+
+        if is_dry_run; then
+            log_info "DRY-RUN: Would install $pkg"
+            add_tool_result "$pkg" "$CONTAINERS_CATEGORY" "" "$latest" "would_install" "" "pending"
+            continue
+        fi
+
+        install_system_packages "$pkg"
+
+        local installed_version
+        installed_version=$(get_local_version "$pkg" "--version" '[0-9]+(\.[0-9]+)+')
+        if [[ -n "$installed_version" ]]; then
+            add_tool_result "$pkg" "$CONTAINERS_CATEGORY" "$installed_version" "$latest" "installed" "$(where_cmd "$pkg")" "verified"
+        else
+            log_error "$pkg installation verification failed"
+            add_tool_result "$pkg" "$CONTAINERS_CATEGORY" "" "$latest" "failed" "" "failed"
+        fi
     done
 }
 

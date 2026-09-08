@@ -7,6 +7,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- `install` now accepts `--categories` and `--tools` together (union of
+  both, deduplicated) instead of `--tools` silently overriding
+  `--categories`.
+- `ensure_path "$BIN_DIR"` now runs *before* the install loop (and `check`
+  now also puts `$BIN_DIR` on PATH for the current process). Previously it
+  ran only after every category finished installing, so a tool installed
+  earlier in the same run (e.g. kubectl) could fail its own
+  post-install verification simply because `$BIN_DIR` wasn't on PATH yet.
+- A single failed tool install no longer aborts the entire `install`/
+  `upgrade` run. Category installers are now called from a tested (`if
+  !`) context, which suspends `set -e` for their full execution (documented
+  bash behavior) so one bad package falls through to that module's existing
+  failure reporting instead of killing every category queued after it.
+- `devtools.sh` was reporting `git`/`jq`/`powershell` as `"installed"` even
+  when the install failed and the binary was nowhere to be found (that
+  "not yet on PATH, may need a new shell" allowance only makes sense for
+  `pyenv`/`nvm`/`rbenv`, which install via shell-rc-modifying scripts).
+- `dev-environment-setup-new.sh` renamed to `dev-environment-setup.sh` and its
+  `main()` now actually wires up `parse_arguments` → `load_configuration` →
+  `load_tool_modules` → `execute_command`. Previously `main()` never called
+  any of these; it ran a hardcoded inline "check" loop regardless of which
+  subcommand was passed, so `install`, `upgrade`, `remove`, and `list` were
+  silently no-ops and every module under `modules/` was dead code.
+- Removed the legacy monolithic `dev-environment-setup.sh` (v0.9 script) and
+  the ~100-line duplicate/corrupted copy of the old argument parser and
+  entrypoint that had been left dead inside the new script.
+- `kubernetes.sh`, `hashicorp.sh`, `cloud.sh`, and `devtools.sh` modules now
+  implement `_check` and `_upgrade`, matching the interface `containers.sh`
+  already had, and their installers now honor `--dry-run` (previously they
+  would run real installs even in dry-run mode).
+- Fixed a `set -e` bug in `get_local_version` (lib/common.sh) that aborted
+  the entire script the moment it checked a tool that wasn't installed —
+  this is why `check`/`install` never completed end-to-end before.
+- Fixed `(( total++ ))`-style post-increment counters in `reporter.sh`
+  aborting the script under `set -e` on their first (zero-valued) increment.
+- Fixed modules invoking `$PKG_MGR install -y <pkg>` directly: `-y` isn't a
+  valid zypper flag and pacman has no `install` subcommand. Modules now call
+  the shared `install_system_packages` helper, which resolves the correct
+  per-distro command and already handles dry-run.
+- Fixed the same install calls silently no-op'ing on word-splitting: since
+  `common.sh` sets `IFS=$'\n\t'` (no space) for safety, a bare
+  `$PKG_INSTALL <pkg>` no longer splits into separate arguments. Routing
+  through `install_system_packages` (which uses `eval`) sidesteps this.
+- Fixed `jq`'s "latest version" lookup pointing at the archived
+  `stedolan/jq` repo instead of `jqlang/jq`.
+- Fixed a YAML formatting typo (`azure-cli : true`, extra space before the
+  colon) in `config/default.yml` that silently excluded azure-cli from
+  every install.
+- Removed three stray zero-byte files (`--version.hwm`, `--version.pwd`,
+  `--version.pwi`) accidentally committed at the repo root.
+
 ### Added
 - Modular architecture with separated lib/ and modules/ directories
 - Configuration system with YAML support

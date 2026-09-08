@@ -1,438 +1,623 @@
 #!/usr/bin/env bash
 # =====================================================================
-# InSight Dev Bootstrap (Linux, Non-GUI)
-# Version: 0.9.0 (MVP)
-# Purpose:
-#   • Detect distro/arch; install CLI dev tools w/ versions & PATH checks
-#   • System-wide when run as root; otherwise installs to $HOME/.local/bin
-#   • Non-GUI tools only: git, curl prereqs, Docker Engine, kubectl, helm,
-#     Terraform, Packer, Vault, AWS CLI v2, Google Cloud SDK, pyenv (optional)
-#   • Latest stable for vendor tools (HashiCorp, kubectl, helm)
-#   • Final status report: Name | Local | Latest | OnPath | Where
+# InSight Dev Bootstrap v1.1.0
+# Enterprise-ready development environment setup for Linux
+#
+# Features:
+# • Modular architecture with pluggable tool modules
+# • Dry-run and check-only modes
+# • Selective installation by category or individual tools
+# • Configuration-driven setup with YAML support
+# • Enhanced security with signature verification
+# • Comprehensive reporting and compliance features
 # =====================================================================
 
-set -euo pipefail
-IFS=$'\n\t'
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_NAME="$(basename "${BASH_SOURCE[0]}")"
+SCRIPT_VERSION="1.1.0"
 
-# ---------- UI ----------
-cyan()  { printf "\033[36m%s\033[0m\n" "$*"; }
-green() { printf "\033[32m%s\033[0m\n" "$*"; }
-yellow(){ printf "\033[33m%s\033[0m\n" "$*"; }
-red()   { printf "\033[31m%s\033[0m\n" "$*"; }
+# Source core libraries
+source "$SCRIPT_DIR/lib/common.sh"
+source "$SCRIPT_DIR/lib/distro.sh"
+source "$SCRIPT_DIR/lib/installer.sh"
+source "$SCRIPT_DIR/lib/reporter.sh"
+source "$SCRIPT_DIR/lib/security.sh"
+source "$SCRIPT_DIR/lib/versioncheck.sh"
 
-title(){ cyan "\n=== $* ==="; }
-info() { green "[INFO] $*"; }
-warn() { yellow "[WARN] $*"; }
-err()  { red   "[ERR ] $*"; }
-
-# ---------- Flags / scope ----------
+# ---------- Default Configuration (nounset-safe) ----------
+DRY_RUN=0
+CHECK_ONLY=0
+FORCE_INSTALL=0
+UPGRADE_MODE=0
 USER_MODE=0
-if [[ "${1:-}" == "--user" ]]; then USER_MODE=1; fi
+VERBOSE=0
+DEBUG=0
+FORCE_LATEST=0
+SELECTED_CATEGORIES=""
+SELECTED_TOOLS=""
+EXCLUDE_TOOLS=""
+VERSION_CONSTRAINTS=""
+CONFIG_FILE=""
+VERIFY_SIGNATURES="false"
+VERIFY_CHECKSUMS="false"
+AUDIT_LOGGING="false"
+SECURITY_LOG_FILE=""
+OUTPUT_FORMATS="txt"
+REPORT_OUTPUT_DIR="."
+GENERATE_COMPLIANCE="false"
 
-IS_ROOT=0
-if [[ "${EUID:-$(id -u)}" -eq 0 ]]; then IS_ROOT=1; fi
+# Canonical tool -> category map, used for individual --tools selection
+declare -A TOOL_CATEGORY=(
+    [docker]="containers" [docker-compose]="containers" [podman]="containers" [containerd]="containers"
+    [kubectl]="kubernetes" [helm]="kubernetes" [k9s]="kubernetes"
+    [terraform]="hashicorp" [packer]="hashicorp" [vault]="hashicorp" [consul]="hashicorp"
+    [aws-cli]="cloud" [gcloud]="cloud" [azure-cli]="cloud" [bicep]="cloud"
+    [pyenv]="devtools" [nvm]="devtools" [rbenv]="devtools" [git]="devtools" [jq]="devtools" [powershell]="devtools"
+)
+readonly SUPPORTED_CATEGORIES=(containers kubernetes hashicorp cloud devtools)
 
-if [[ $USER_MODE -eq 0 && $IS_ROOT -ne 1 ]]; then
-  warn "Not running as root; switching to user-scope installs (~/.local/bin). Use sudo for system-wide."
-  USER_MODE=1
-fi
+# ---------- Help / Info ----------
+show_usage() {
+    cat <<EOF
+$SCRIPT_NAME v$SCRIPT_VERSION - InSight Dev Bootstrap
 
-if [[ $USER_MODE -eq 1 ]]; then
-  PREFIX="${HOME}/.local"
-  BIN_DIR="${PREFIX}/bin"
-  OPT_DIR="${HOME}/.devtools"
-  PROFILE_RC="${HOME}/.bashrc"
-else
-  PREFIX="/usr/local"
-  BIN_DIR="${PREFIX}/bin"
-  OPT_DIR="/opt/devtools"
-  PROFILE_RC="/etc/profile.d/devtools-path.sh"
-fi
+Usage: $SCRIPT_NAME <command> [options]
 
-mkdir -p "$BIN_DIR" "$OPT_DIR"
+Commands:
+  install       Install selected tools (default)
+  check         Report installed/available versions without changing anything
+  upgrade       Upgrade installed tools to their latest version
+  remove        Show how to remove installed tools
+  list          List supported categories and tools
 
-# ---------- Detect OS / Distro / PM ----------
-title "Detecting Linux Environment"
-OS=$(uname -s)
-ARCH=$(uname -m)  # x86_64, aarch64, armv7l...
-info "Kernel: $OS  Arch: $ARCH"
+Installation mode:
+  --system                 Install system-wide (requires root)
+  --user                   Install to \$HOME/.local/bin
+  --dry-run                Preview actions without making changes
+  --force                  Reinstall even if already present
+  --upgrade                Upgrade instead of fresh-install
 
-# map arch for vendor assets
-case "$ARCH" in
-  x86_64)  HC_ARCH="amd64"; K8S_ARCH="amd64"; HELM_ARCH="amd64"; AWS_ARCH="x86_64";;
-  aarch64) HC_ARCH="arm64"; K8S_ARCH="arm64"; HELM_ARCH="arm64"; AWS_ARCH="aarch64";;
-  armv7l)  HC_ARCH="arm";   K8S_ARCH="arm";   HELM_ARCH="arm";   AWS_ARCH="armv7l";;
-  *)       HC_ARCH="amd64"; K8S_ARCH="amd64"; HELM_ARCH="amd64"; AWS_ARCH="x86_64"; warn "Unrecognized arch '$ARCH' → defaulting to amd64/x86_64";;
-esac
+Tool selection:
+  --categories <list>      Comma-separated categories (e.g. containers,cloud)
+  --tools <list>            Comma-separated individual tools (e.g. docker,kubectl)
+  --exclude <list>          Comma-separated tools to skip
+  --versions <list>         Version pins, e.g. terraform=1.5.0,kubectl=1.27.0
 
-if [[ -r /etc/os-release ]]; then
-  # shellcheck disable=SC1091
-  . /etc/os-release
-  DISTRO_ID="${ID:-unknown}"
-  DISTRO_LIKE="${ID_LIKE:-}"
-else
-  DISTRO_ID="unknown"
-  DISTRO_LIKE=""
-fi
-info "Distro: ${DISTRO_ID} (like: ${DISTRO_LIKE})"
+Configuration:
+  --config <file>           Path to a YAML config file
+  --profile <name>          Use config/<name>.yml
 
-PKG=""
-if command -v apt-get >/dev/null 2>&1; then
-  PKG="apt";   UPDATE="apt-get update -y"; INSTALL="apt-get install -y"
-elif command -v dnf >/dev/null 2>&1; then
-  PKG="dnf";   UPDATE="dnf -y makecache";  INSTALL="dnf install -y"
-elif command -v yum >/dev/null 2>&1; then
-  PKG="yum";   UPDATE="yum -y makecache";  INSTALL="yum install -y"
-elif command -v zypper >/dev/null 2>&1; then
-  PKG="zypper";UPDATE="zypper -n refresh"; INSTALL="zypper -n install --no-confirm"
-elif command -v pacman >/dev/null 2>&1; then
-  PKG="pacman";UPDATE="pacman -Sy --noconfirm"; INSTALL="pacman -S --noconfirm --needed"
-else
-  err "Unsupported distro: no known package manager found"; exit 1
-fi
-info "Package manager: $PKG"
+Security:
+  --verify-signatures       Enable GPG signature verification
+  --verify-checksums        Enable checksum validation
+  --no-verify               Disable both of the above
+  --audit-log <file>        Enable audit logging to <file>
 
-# ---------- PATH ensure ----------
-ensure_path() {
-  local dir="$1"
-  case ":$PATH:" in
-    *":$dir:"*) return 0;;
-    *) export PATH="$dir:$PATH";;
-  esac
+Output:
+  --output-formats <list>   csv,json,txt,html,markdown
+  --output-dir <dir>        Directory for generated reports
+  --compliance-report       Also generate a compliance report
+  --force-latest            Bypass the cached latest-version lookups
 
-  if [[ $USER_MODE -eq 1 ]]; then
-    if ! grep -qs "$dir" "$PROFILE_RC" 2>/dev/null; then
-      echo "export PATH=\"$dir:\$PATH\"" >> "$PROFILE_RC"
-    fi
-  else
-    # system-wide profile snippet
-    echo "export PATH=\"$dir:\$PATH\"" > "$PROFILE_RC"
-  fi
+Other:
+  --quiet | --verbose | --debug
+  --list-tools | --list-categories
+  --help, -h                Show this help
+  --version, -v             Show version information
+
+Examples:
+  $SCRIPT_NAME check
+  $SCRIPT_NAME install --dry-run
+  $SCRIPT_NAME install --user --categories containers,cloud
+  $SCRIPT_NAME install --tools docker,kubectl,terraform
+EOF
 }
 
-ensure_path "$BIN_DIR"
-
-# ---------- Baseline packages ----------
-title "Installing Baseline Packages ($PKG)"
-$UPDATE || true
-case "$PKG" in
-  apt)     $INSTALL ca-certificates curl wget git jq unzip tar xz-utils gnupg lsb-release;;
-  dnf|yum) $INSTALL ca-certificates curl wget git jq unzip tar xz gzip gnupg2 redhat-lsb-core || true;;
-  zypper)  $INSTALL ca-certificates curl wget git jq unzip tar xz gzip gpg2 lsb-release || true;;
-  pacman)  $INSTALL ca-certificates curl wget git jq unzip tar xz gnupg lsb-release || true;;
-esac
-
-# ---------- Helpers ----------
-# where-like resolver
-where_cmd() {
-  local name="$1"
-  command -v "$name" 2>/dev/null || true
+show_version() {
+    echo "$SCRIPT_NAME v$SCRIPT_VERSION"
 }
 
-# version capture (with timeout)
-run_cap() {
-  local exe="$1"; shift
-  local seconds="${TOOL_TIMEOUT:-15}"
-  timeout "$seconds" "$exe" "$@" 2>/dev/null || true
-}
-
-get_local_ver() {
-  local cmd="$1" args="$2" regex="$3"
-  local path
-  path=$(where_cmd "$cmd")
-  [[ -z "$path" ]] && echo "" && return 0
-  local out
-  out=$(run_cap "$path" $args)
-  [[ "$out" =~ $regex ]] && echo "${BASH_REMATCH[0]}" || echo ""
-}
-
-get_latest_hashicorp() {
-  local product="$1"
-  local url="https://releases.hashicorp.com/${product}/index.json"
-  local ver
-  ver=$(curl -fsSL -H 'User-Agent: DevBootstrap' "$url" | jq -r '.versions | keys[]' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1 || true)
-  [[ -n "$ver" ]] && echo "$ver" || echo ""
-}
-
-get_latest_kubectl() {
-  local v
-  v=$(curl -fsSL https://dl.k8s.io/release/stable.txt | sed 's/^v//' || true)
-  echo "$v"
-}
-
-get_latest_helm() {
-  local v
-  v=$(curl -fsSL -H 'User-Agent: DevBootstrap' https://api.github.com/repos/helm/helm/releases/latest | jq -r '.tag_name' | sed 's/^v//' || true)
-  [[ -n "$v" ]] && echo "$v" || echo ""
-}
-
-dl() { curl -fsSL --retry 3 --retry-delay 1 -o "$2" "$1"; }
-install_bin() {
-  local src="$1" dst="$2"
-  install -m 0755 "$src" "$dst"
-}
-
-# Track results
-RESULTS=() # lines: "Name|Local|Latest|OnPath|Where"
-
-record_result() {
-  local name="$1" localv="$2" latest="$3" onpath="$4" where="$5"
-  RESULTS+=("${name}|${localv}|${latest}|${onpath}|${where}")
-}
-
-# ---------- Installers ----------
-install_hashicorp() {
-  local name="$1" bin="$1" regex='\d+(\.\d+)+'
-  local latest zip tmp
-  latest=$(get_latest_hashicorp "$name")
-  if [[ -z "$latest" ]]; then warn "Cannot resolve latest for $name"; latest=""; fi
-  local current; current=$(get_local_ver "$bin" "version" "$regex")
-
-  if [[ -n "$current" ]]; then
-    info "$name already installed ($current)"
-  else
-    title "$name → Install"
-    zip="${OPT_DIR}/${name}_${latest}_linux_${HC_ARCH}.zip"
-    dl "https://releases.hashicorp.com/${name}/${latest}/${name}_${latest}_linux_${HC_ARCH}.zip" "$zip"
-    tmp="${OPT_DIR}/${name}-${latest}"
-    rm -rf "$tmp"; mkdir -p "$tmp"
-    unzip -o "$zip" -d "$tmp" >/dev/null
-    install_bin "$tmp/${name}" "${BIN_DIR}/${name}"
-    rm -rf "$tmp"
-  fi
-
-  ensure_path "$BIN_DIR"
-  local where current2
-  where=$(where_cmd "$bin")
-  current2=$(get_local_ver "$bin" "version" "$regex")
-  record_result "$(tr '[:lower:]' '[:upper:]' <<< ${name:0:1})${name:1}" "$current2" "$latest" "$([[ -n "$where" ]] && echo true || echo false)" "$where"
-}
-
-install_kubectl() {
-  local regex='\d+(\.\d+)+'
-  local latest current where
-  latest=$(get_latest_kubectl)
-  current=$(get_local_ver "kubectl" "version --client --short" "$regex")
-  if [[ -z "$current" ]]; then
-    title "kubectl → Install"
-    local out="${BIN_DIR}/kubectl"
-    dl "https://dl.k8s.io/release/v${latest}/bin/linux/${K8S_ARCH}/kubectl" "$out"
-    chmod +x "$out"
-  else
-    info "kubectl already installed ($current)"
-  fi
-  ensure_path "$BIN_DIR"
-  where=$(where_cmd kubectl)
-  current=$(get_local_ver "kubectl" "version --client --short" "$regex")
-  record_result "kubectl" "$current" "$latest" "$([[ -n "$where" ]] && echo true || echo false)" "$where"
-}
-
-install_helm() {
-  local regex='\d+(\.\d+)+'
-  local latest current where
-  latest=$(get_latest_helm)
-  current=$(get_local_ver "helm" "version --short" "$regex")
-  if [[ -z "$current" ]]; then
-    title "helm → Install"
-    local tgz="${OPT_DIR}/helm-v${latest}-linux-${HELM_ARCH}.tar.gz"
-    dl "https://get.helm.sh/helm-v${latest}-linux-${HELM_ARCH}.tar.gz" "$tgz"
-    local tmp="${OPT_DIR}/helm-${latest}"
-    rm -rf "$tmp"; mkdir -p "$tmp"
-    tar -xzf "$tgz" -C "$tmp"
-    install_bin "$tmp/linux-${HELM_ARCH}/helm" "${BIN_DIR}/helm"
-  else
-    info "helm already installed ($current)"
-  fi
-  ensure_path "$BIN_DIR"
-  where=$(where_cmd helm)
-  current=$(get_local_ver "helm" "version --short" "$regex")
-  record_result "helm" "$current" "$latest" "$([[ -n "$where" ]] && echo true || echo false)" "$where"
-}
-
-install_awscli() {
-  local regex='\d+(\.\d+)+'
-  local current where
-  current=$(get_local_ver "aws" "--version" "$regex")
-  if [[ -z "$current" ]]; then
-    title "AWS CLI v2 → Install"
-    local zip="${OPT_DIR}/awscli-linux-${AWS_ARCH}.zip"
-    dl "https://awscli.amazonaws.com/awscli-exe-linux-${AWS_ARCH}.zip" "$zip"
-    local tmp="${OPT_DIR}/awscli"
-    rm -rf "$tmp"; mkdir -p "$tmp"
-    unzip -q "$zip" -d "$tmp"
-    if [[ $USER_MODE -eq 1 ]]; then
-      "${tmp}/aws/install" --update -i "${OPT_DIR}/aws-cli" -b "${BIN_DIR}" >/dev/null
-    else
-      "${tmp}/aws/install" --update >/dev/null
-    fi
-  else
-    info "AWS CLI v2 already installed ($current)"
-  fi
-  ensure_path "$BIN_DIR"
-  where=$(where_cmd aws)
-  current=$(get_local_ver "aws" "--version" "$regex")
-  record_result "AWS CLI v2" "$current" "" "$([[ -n "$where" ]] && echo true || echo false)" "$where"
-}
-
-install_gcloud() {
-  local regex='\d+(\.\d+)+'
-  local current where
-  current=$(get_local_ver "gcloud" "--version" "$regex")
-  if [[ -z "$current" ]]; then
-    title "Google Cloud SDK → Install"
-    local tgz="${OPT_DIR}/google-cloud-sdk.tar.gz"
-    dl "https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-cli-linux-${HELM_ARCH}.tar.gz" "$tgz" || true
-    if [[ ! -s "$tgz" ]]; then
-      # Fallback universal
-      dl "https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-cli-linux-x86_64.tar.gz" "$tgz"
-    fi
-    local dir="${OPT_DIR}/google-cloud-sdk"
-    rm -rf "$dir"; mkdir -p "$OPT_DIR"
-    tar -xzf "$tgz" -C "$OPT_DIR"
-    if [[ $USER_MODE -eq 1 ]]; then
-      "${dir}/install.sh" --quiet --usage-reporting=false --command-completion=true --path-update=true >/dev/null || true
-      ensure_path "${dir}/bin"
-    else
-      "${dir}/install.sh" --quiet --usage-reporting=false --command-completion=true --path-update=true >/dev/null || true
-      ensure_path "${dir}/bin"
-    fi
-  else
-    info "Google Cloud SDK already installed ($current)"
-  fi
-  where=$(where_cmd gcloud)
-  current=$(get_local_ver "gcloud" "--version" "$regex")
-  record_result "Google Cloud SDK" "$current" "" "$([[ -n "$where" ]] && echo true || echo false)" "$where"
-}
-
-install_docker_engine() {
-  local current where
-  current=$(get_local_ver "docker" "--version" '\d+(\.\d+)+')
-  if [[ -z "$current" ]]; then
-    title "Docker Engine (server + CLI) → Install"
-    if [[ "$PKG" == "apt" ]]; then
-      install -m 0755 -d /etc/apt/keyrings || true
-      curl -fsSL https://download.docker.com/linux/"${DISTRO_ID:-ubuntu}"/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg || true
-      chmod a+r /etc/apt/keyrings/docker.gpg || true
-      echo \
-        "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/${DISTRO_ID:-ubuntu} \
-        $(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
-        > /etc/apt/sources.list.d/docker.list || true
-      apt-get update -y || true
-      apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin || true
-    elif [[ "$PKG" == "dnf" || "$PKG" == "yum" ]]; then
-      curl -fsSL https://get.docker.com | sh
-    elif [[ "$PKG" == "zypper" ]]; then
-      curl -fsSL https://get.docker.com | sh
-    elif [[ "$PKG" == "pacman" ]]; then
-      pacman -Sy --noconfirm docker || true
-      systemctl enable --now docker || true
-    fi
-    if [[ $IS_ROOT -ne 1 ]]; then
-      warn "To use docker as non-root: sudo usermod -aG docker $USER && re-login"
-    fi
-  else
-    info "Docker already installed ($current)"
-  fi
-  ensure_path "$BIN_DIR"
-  where=$(where_cmd docker)
-  current=$(get_local_ver "docker" "--version" '\d+(\.\d+)+')
-  record_result "Docker Engine" "$current" "" "$([[ -n "$where" ]] && echo true || echo false)" "$where"
-}
-
-install_pyenv() {
-  local where
-  where=$(where_cmd pyenv)
-  if [[ -z "$where" ]]; then
-    title "pyenv (user) → Install"
-    # Always user-scope for pyenv
-    curl -fsSL https://pyenv.run | bash
-    # ensure shims on PATH
-    ensure_path "$HOME/.pyenv/bin"
-    if ! grep -qs 'pyenv init' "$PROFILE_RC" 2>/dev/null; then
-      {
-        echo 'export PYENV_ROOT="$HOME/.pyenv"'
-        echo 'command -v pyenv >/dev/null || export PATH="$PYENV_ROOT/bin:$PATH"'
-        echo 'eval "$(pyenv init -)"'
-      } >> "$PROFILE_RC"
-    fi
-  else
-    info "pyenv already installed ($where)"
-  fi
-  where=$(where_cmd pyenv)
-  local v; v=$(get_local_ver "pyenv" "--version" '\d+(\.\d+)+')
-  record_result "pyenv" "$v" "" "$([[ -n "$where" ]] && echo true || echo false)" "$where"
-}
-
-# ---------- Catalog execution ----------
-title "Installing System Tools"
-install_docker_engine
-install_kubectl
-install_helm
-install_hashicorp "terraform"
-install_hashicorp "packer"
-install_hashicorp "vault"
-install_awscli
-install_gcloud
-install_pyenv
-
-# ---------- Post: Status ----------
-title "Post-Install Status"
-printf "%-18s %-12s %-10s %-6s %s\n" "Name" "Local" "Latest" "PATH?" "Where"
-printf "%-18s %-12s %-10s %-6s %s\n" "----" "-----" "------" "-----" "-----"
-for line in "${RESULTS[@]}"; do
-  IFS='|' read -r n l s p w <<<"$line"
-  printf "%-18s %-12s %-10s %-6s %s\n" "$n" "${l:-"-"}" "${s:-"-"}" "$p" "${w:-"-"}"
-done
-
-# Write reports into current dir
-STAMP=$(date +%Y%m%d_%H%M%S)
-CSV="dev_setup_status_${STAMP}.csv"
-JSON="dev_setup_status_${STAMP}.json"
-TXT="dev_setup_log_${STAMP}.txt"
-
-{
-  echo "Name,Local,Latest,OnPath,Where"
-  for line in "${RESULTS[@]}"; do
-    IFS='|' read -r n l s p w <<<"$line"
-    echo "\"$n\",\"${l}\",\"${s}\",\"${p}\",\"${w}\""
-  done
-} > "$CSV"
-
-# minimal JSON
-{
-  echo "{"
-  echo "  \"runAt\": \"$(date -Iseconds)\","
-  echo "  \"arch\": \"${ARCH}\","
-  echo "  \"distro\": \"${DISTRO_ID}\","
-  echo "  \"binDir\": \"${BIN_DIR}\","
-  echo "  \"tools\": ["
-  first=1
-  for line in "${RESULTS[@]}"; do
-    IFS='|' read -r n l s p w <<<"$line"
-    [[ $first -eq 0 ]] && echo "    ,"
-    echo "    {\"name\": \"${n}\", \"local\": \"${l}\", \"latest\": \"${s}\", \"onPath\": ${p}, \"where\": \"${w}\"}"
-    first=0
-  done
-  echo "  ]"
-  echo "}"
-} > "$JSON"
-
-{
-  echo "=== InSight Dev Bootstrap (Linux, Non-GUI) v0.9.0 ==="
-  echo "Ran at: $(date -Iseconds)"
-  echo "Arch: ${ARCH}  Distro: ${DISTRO_ID}"
-  echo "BIN_DIR: ${BIN_DIR}"
-  echo
-  column -t -s' ' < <(
-    printf "%-18s %-12s %-10s %-6s %s\n" "Name" "Local" "Latest" "PATH?" "Where"
-    printf "%-18s %-12s %-10s %-6s %s\n" "----" "-----" "------" "-----" "-----"
-    for line in "${RESULTS[@]}"; do
-      IFS='|' read -r n l s p w <<<"$line"
-      printf "%-18s %-12s %-10s %-6s %s\n" "$n" "${l:-"-"}" "${s:-"-"}" "$p" "${w:-"-"}"
+list_available_categories() {
+    title "Available Categories"
+    for category in "${SUPPORTED_CATEGORIES[@]}"; do
+        echo "  - $category"
     done
-  )
-} > "$TXT"
+}
 
-info "Status CSV  → $CSV"
-info "Status JSON → $JSON"
-info "Log         → $TXT"
+list_available_tools() {
+    title "Available Tools"
+    local tool
+    for tool in "${!TOOL_CATEGORY[@]}"; do
+        printf "  %-15s (%s)\n" "$tool" "${TOOL_CATEGORY[$tool]}"
+    done | sort
+}
+
+# ---------- Argument Parsing ----------
+parse_arguments() {
+    local command="install"
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            # Commands
+            install|check|upgrade|remove|list)
+                command="$1"
+                shift
+                ;;
+            # Installation mode
+            --system)
+                USER_MODE=0
+                shift
+                ;;
+            --user)
+                USER_MODE=1
+                shift
+                ;;
+            --dry-run)
+                DRY_RUN=1
+                shift
+                ;;
+            --force)
+                FORCE_INSTALL=1
+                shift
+                ;;
+            --upgrade)
+                UPGRADE_MODE=1
+                shift
+                ;;
+            # Tool selection
+            --categories)
+                SELECTED_CATEGORIES="$2"
+                shift 2
+                ;;
+            --tools)
+                SELECTED_TOOLS="$2"
+                shift 2
+                ;;
+            --exclude)
+                EXCLUDE_TOOLS="$2"
+                shift 2
+                ;;
+            --versions)
+                VERSION_CONSTRAINTS="$2"
+                shift 2
+                ;;
+            # Configuration
+            --config)
+                CONFIG_FILE="$2"
+                shift 2
+                ;;
+            --profile)
+                CONFIG_FILE="$SCRIPT_DIR/config/$2.yml"
+                shift 2
+                ;;
+            # Security
+            --verify-signatures)
+                VERIFY_SIGNATURES="true"
+                shift
+                ;;
+            --verify-checksums)
+                VERIFY_CHECKSUMS="true"
+                shift
+                ;;
+            --no-verify)
+                VERIFY_SIGNATURES="false"
+                VERIFY_CHECKSUMS="false"
+                shift
+                ;;
+            --audit-log)
+                AUDIT_LOGGING="true"
+                SECURITY_LOG_FILE="$2"
+                shift 2
+                ;;
+            # Output and reporting
+            --output-formats)
+                OUTPUT_FORMATS="$2"
+                shift 2
+                ;;
+            --output-dir)
+                REPORT_OUTPUT_DIR="$2"
+                shift 2
+                ;;
+            --compliance-report)
+                GENERATE_COMPLIANCE="true"
+                shift
+                ;;
+            --quiet)
+                LOG_LEVEL=$LOG_LEVEL_WARN
+                shift
+                ;;
+            --verbose)
+                VERBOSE=1
+                LOG_LEVEL=$LOG_LEVEL_DEBUG
+                shift
+                ;;
+            --debug)
+                DEBUG=1
+                LOG_LEVEL=$LOG_LEVEL_DEBUG
+                set -x
+                shift
+                ;;
+            # Global flag: force latest version check
+            --force-latest)
+                FORCE_LATEST=1
+                shift
+                ;;
+            # Help and information
+            --help|-h)
+                show_usage
+                exit 0
+                ;;
+            --version|-v)
+                show_version
+                exit 0
+                ;;
+            --list-tools)
+                list_available_tools
+                exit 0
+                ;;
+            --list-categories)
+                list_available_categories
+                exit 0
+                ;;
+            # Unknown option
+            --*)
+                die $EXIT_INVALID_ARGS "Unknown option: $1"
+                ;;
+            # Positional arguments
+            *)
+                die $EXIT_INVALID_ARGS "Unknown argument: $1"
+                ;;
+        esac
+    done
+    # Export command for use by other functions
+    export COMMAND="$command"
+    export DRY_RUN CHECK_ONLY FORCE_INSTALL UPGRADE_MODE USER_MODE VERBOSE DEBUG FORCE_LATEST
+    export SELECTED_CATEGORIES SELECTED_TOOLS EXCLUDE_TOOLS VERSION_CONSTRAINTS OUTPUT_FORMATS
+}
+
+# ---------- Configuration Loading ----------
+load_configuration() {
+    local config_files=(
+        "$SCRIPT_DIR/config/default.yml"
+        "/etc/devtools/config.yml"
+        "$HOME/.config/devtools.yml"
+    )
+
+    # Add user-specified config file
+    if [[ -n "$CONFIG_FILE" ]]; then
+        config_files+=("$CONFIG_FILE")
+    fi
+
+    log_info "Loading configuration files..."
+
+    for config_file in "${config_files[@]}"; do
+        if [[ -r "$config_file" ]]; then
+            log_debug "Loading config: $config_file"
+            # Parse YAML and set CONFIG_<tool> variables for tool enablement
+            while IFS=: read -r key value; do
+                export "CONFIG_${key}=${value}"
+            done < <(awk '/^[ ]*[a-zA-Z0-9_-]+:[ ]*(true|auto)/ {gsub(/:/,"",$0); gsub(/[ \t]+/," ",$0); split($0,a," "); key=a[1]; value=a[2]; gsub("-","_",key); print key ":" value}' "$config_file")
+        else
+            log_debug "Config file not found: $config_file"
+        fi
+    done
+}
+
+# ---------- Module Loading ----------
+load_tool_modules() {
+    local modules=(containers kubernetes hashicorp cloud devtools)
+
+    log_debug "Loading tool modules..."
+
+    for module in "${modules[@]}"; do
+        local module_file="$SCRIPT_DIR/modules/${module}.sh"
+        if [[ -r "$module_file" ]]; then
+            log_debug "Loading module: $module"
+            # shellcheck disable=SC1090
+            source "$module_file"
+        else
+            log_warn "Module not found: $module_file"
+        fi
+    done
+}
+
+# ---------- Category / Tool Selection Helpers ----------
+# Build the comma-separated tool list for one category, honoring the YAML
+# config's true/auto flags and any --exclude list from the CLI.
+_tools_for_category() {
+    local category="$1"
+    local tool tool_list=""
+
+    for tool in "${!TOOL_CATEGORY[@]}"; do
+        [[ "${TOOL_CATEGORY[$tool]}" == "$category" ]] || continue
+
+        local config_key="CONFIG_${tool//-/_}"
+        if [[ "${!config_key:-}" == "true" || "${!config_key:-}" == "auto" ]]; then
+            if [[ ",${EXCLUDE_TOOLS}," == *",${tool},"* ]]; then
+                continue
+            fi
+            tool_list+="${tool},"
+        fi
+    done
+    echo "${tool_list%,}"
+}
+
+# Remove duplicate entries from a comma-separated tool list, preserving
+# first-seen order (a tool may appear once from category expansion and again
+# from an explicit --tools request).
+_dedupe_tool_list() {
+    local list="${1%,}"
+    local tool seen="," result=""
+    IFS=',' read -ra all_tools <<< "$list"
+    for tool in "${all_tools[@]}"; do
+        [[ -z "$tool" ]] && continue
+        [[ "$seen" == *",${tool},"* ]] && continue
+        seen+="${tool},"
+        result+="${tool},"
+    done
+    echo "${result%,}"
+}
+
+# Dispatch an install call to the right module for one category.
+_install_category() {
+    local category="$1"
+    local tool_list="$2"
+    [[ -z "$tool_list" ]] && return 0
+
+    local installer_fn=""
+    case "$category" in
+        containers) installer_fn="containers_install" ;;
+        kubernetes) installer_fn="install_kubernetes_tools" ;;
+        hashicorp)  installer_fn="install_hashicorp_tools" ;;
+        cloud)      installer_fn="install_cloud_tools" ;;
+        devtools)   installer_fn="install_devtools" ;;
+        *)
+            log_warn "Unknown category: $category"
+            return 0
+            ;;
+    esac
+
+    if ! command_exists "$installer_fn"; then
+        log_warn "${category^} module not loaded"
+        return 0
+    fi
+
+    # Calling the installer from a tested (if !) context suspends `set -e`
+    # for its entire execution (this is documented bash behavior, not a bug):
+    # a failure on one tool inside the loop no longer aborts the whole
+    # script, it just falls through to that module's own verification code,
+    # which already records the failure via add_tool_result. This is what
+    # makes a failed docker install, say, not also take out kubernetes,
+    # hashicorp, cloud, and devtools installs that were queued after it.
+    if ! "$installer_fn" "$tool_list"; then
+        log_error "One or more tools in category '$category' failed to install; continuing with remaining categories"
+    fi
+}
+
+# ---------- Command Execution ----------
+execute_command() {
+    case "$COMMAND" in
+        install) execute_install_command ;;
+        check)   execute_check_command ;;
+        upgrade) execute_upgrade_command ;;
+        remove)  execute_remove_command ;;
+        list)    execute_list_command ;;
+        *)       die $EXIT_INVALID_ARGS "Unknown command: $COMMAND" ;;
+    esac
+}
+
+execute_install_command() {
+    title "InSight Dev Bootstrap - Installation"
+
+    if [[ $DRY_RUN -eq 1 ]]; then
+        info "DRY-RUN MODE: No changes will be made"
+    fi
+
+    # Put $BIN_DIR on PATH (and persist it) *before* installing anything, so
+    # that verification lookups for tools installed this run (e.g. kubectl
+    # right after it's dropped into $BIN_DIR) can actually find them, and so
+    # a plain `check` run afterwards sees them too.
+    ensure_path "$BIN_DIR"
+
+    if ! is_dry_run; then
+        log_info "Installing baseline system packages"
+        install_baseline_packages
+    fi
+
+    # Build the set of tools to install as the UNION of:
+    #   - every tool enabled (true/auto) in the selected (or default)
+    #     categories, and
+    #   - any individually-named --tools, which are installed even if not
+    #     enabled in the config (an explicit request overrides config gating,
+    #     matching config/default.yml's own documented precedence).
+    # Both may be given together, e.g. --categories containers --tools terraform.
+    declare -A tools_by_category=()
+
+    if [[ -n "$SELECTED_CATEGORIES" || -z "$SELECTED_TOOLS" ]]; then
+        local categories_to_install="${SELECTED_CATEGORIES:-containers,kubernetes,hashicorp,cloud,devtools}"
+        IFS=',' read -ra category_array <<< "$categories_to_install"
+        for category in "${category_array[@]}"; do
+            category=$(trim "$category")
+            local category_tools
+            category_tools="$(_tools_for_category "$category")"
+            [[ -n "$category_tools" ]] && tools_by_category[$category]+="${category_tools},"
+        done
+    fi
+
+    if [[ -n "$SELECTED_TOOLS" ]]; then
+        log_info "Also installing individually requested tools: $SELECTED_TOOLS"
+        IFS=',' read -ra requested_tools <<< "$SELECTED_TOOLS"
+        for tool in "${requested_tools[@]}"; do
+            tool=$(trim "$tool")
+            local category="${TOOL_CATEGORY[$tool]:-}"
+            if [[ -z "$category" ]]; then
+                log_warn "Unknown tool: $tool"
+                continue
+            fi
+            tools_by_category[$category]+="${tool},"
+        done
+    fi
+
+    local category
+    for category in "${!tools_by_category[@]}"; do
+        log_info "Installing category: $category"
+        _install_category "$category" "$(_dedupe_tool_list "${tools_by_category[$category]}")"
+    done
+
+    print_status_table
+    print_summary
+
+    if ! is_dry_run; then
+        generate_final_reports
+    fi
+
+    if [[ ":$PATH:" != *":$BIN_DIR:"* ]]; then
+        echo
+        echo "[INFO] Installed tools may not be available until you restart your shell or run:"
+        echo "  export PATH=$BIN_DIR:\$PATH"
+        echo
+    fi
+}
+
+execute_check_command() {
+    title "InSight Dev Bootstrap - Status Check"
+
+    local category
+    for category in "${SUPPORTED_CATEGORIES[@]}"; do
+        if command_exists "${category}_check"; then
+            log_debug "Checking category: $category"
+            "${category}_check"
+        else
+            log_warn "No check function for category: $category"
+        fi
+    done
+
+    print_status_table
+    print_summary
+    generate_final_reports
+}
+
+execute_upgrade_command() {
+    title "InSight Dev Bootstrap - Upgrade"
+
+    if [[ $DRY_RUN -eq 1 ]]; then
+        info "DRY-RUN MODE: No changes will be made"
+    fi
+
+    ensure_path "$BIN_DIR"
+
+    local category
+    for category in "${SUPPORTED_CATEGORIES[@]}"; do
+        if command_exists "${category}_upgrade"; then
+            log_info "Upgrading category: $category"
+            "${category}_upgrade"
+        fi
+    done
+
+    print_status_table
+    print_summary
+
+    if ! is_dry_run; then
+        generate_final_reports
+    fi
+}
+
+execute_remove_command() {
+    title "InSight Dev Bootstrap - Remove Tools"
+
+    if [[ $DRY_RUN -eq 1 ]]; then
+        info "DRY-RUN MODE: No changes will be made"
+    fi
+
+    if [[ -n "$SELECTED_TOOLS" ]] && command_exists containers_remove; then
+        containers_remove "$SELECTED_TOOLS"
+    fi
+
+    log_warn "Tool removal functionality is limited today"
+    log_info "Use your system package manager to remove tools:"
+
+    case "$PKG_MGR" in
+        apt) echo "  sudo apt remove <package-name>" ;;
+        dnf) echo "  sudo dnf remove <package-name>" ;;
+        yum) echo "  sudo yum remove <package-name>" ;;
+        zypper) echo "  sudo zypper remove <package-name>" ;;
+        pacman) echo "  sudo pacman -R <package-name>" ;;
+    esac
+}
+
+execute_list_command() {
+    title "InSight Dev Bootstrap - Available Tools"
+    list_available_categories
+    echo
+    list_available_tools
+}
+
+# ---------- Report Generation ----------
+generate_final_reports() {
+    local timestamp
+    timestamp=$(date +%Y%m%d_%H%M%S)
+
+    local base_name="dev_setup_status"
+    local output_dir="${REPORT_OUTPUT_DIR:-.}"
+
+    ensure_directory "$output_dir"
+    generate_reports "$output_dir/$base_name" "$OUTPUT_FORMATS"
+
+    if [[ "${GENERATE_COMPLIANCE:-false}" == "true" ]]; then
+        generate_compliance_report "$output_dir/compliance_report_${timestamp}.json"
+    fi
+
+    if [[ "$VERIFY_SIGNATURES" == "true" || "$AUDIT_LOGGING" == "true" ]]; then
+        generate_security_report "$output_dir/security_report_${timestamp}.json"
+    fi
+}
+
+# ---------- Error Handling ----------
+handle_error() {
+    local exit_code=$?
+    local line_number=$1
+
+    log_error "Script failed at line $line_number with exit code $exit_code"
+    cleanup_temp_files 2>/dev/null || true
+    exit $exit_code
+}
+trap 'handle_error $LINENO' ERR
+
+# ---------- Main Execution ----------
+main() {
+    parse_arguments "$@"
+
+    if [[ -n "${LOG_FILE:-}" ]]; then
+        log_message "INFO" "=== $SCRIPT_NAME v$SCRIPT_VERSION started (command=$COMMAND) ==="
+    fi
+
+    title "System Validation"
+    initialize_distro_detection
+    initialize_installer
+    initialize_reporter
+    initialize_security
+    echo "OS: $(uname -s) $(uname -r)"
+    echo "Architecture: $(detect_architecture)"
+    echo "Distribution: ${DISTRO_ID:-unknown} ${DISTRO_VERSION:-}"
+    echo "Package Manager: ${PKG_MGR:-unknown}"
+    echo "Install mode: $INSTALL_MODE ($BIN_DIR)"
+
+    # Make sure tools from a previous run (sitting in $BIN_DIR) are visible
+    # to this process even if the current shell's PATH predates them. This
+    # does not touch .bashrc/profile.d; install/upgrade do that separately
+    # via ensure_path.
+    case ":$PATH:" in
+        *":$BIN_DIR:"*) ;;
+        *) export PATH="$BIN_DIR:$PATH" ;;
+    esac
+
+    load_configuration
+    load_tool_modules
+    clear_results
+
+    execute_command
+}
+
+# ---------- Script Execution ----------
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    main "$@"
+fi
