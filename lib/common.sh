@@ -111,6 +111,29 @@ is_user_mode() {
     [[ "${USER_MODE:-0}" == "1" ]]
 }
 
+# The non-root human user who ran `sudo`, if any. Empty when not running
+# under sudo (e.g. a genuine root login), since there's then no other
+# account to fall back to for user-scoped tools.
+sudo_invoking_user() {
+    if [[ -n "${SUDO_USER:-}" && "$SUDO_USER" != "root" ]]; then
+        echo "$SUDO_USER"
+    fi
+}
+
+# Home directory for a given user account.
+user_home_dir() {
+    getent passwd "$1" 2>/dev/null | cut -d: -f6
+}
+
+# Runs a single command string as another user's login shell (so $HOME,
+# profile files, etc. are that user's own). Only works when the caller is
+# already root, which is always true wherever this is used.
+run_as_user() {
+    local user="$1"
+    local cmd="$2"
+    runuser -l "$user" -c "$cmd"
+}
+
 is_dry_run() {
     [[ "${DRY_RUN:-0}" == "1" ]]
 }
@@ -136,11 +159,14 @@ run_with_timeout() {
     local cmd="$2"
     shift 2
     
+    # stdin is redirected from /dev/null so a tool that prompts on first run
+    # (e.g. gcloud's survey opt-in) gets EOF instead of blocking on our TTY
+    # until the timeout kills it and swallows its version output.
     if command_exists timeout; then
-        timeout "$timeout_sec" "$cmd" "$@" 2>/dev/null || true
+        timeout "$timeout_sec" "$cmd" "$@" < /dev/null 2>/dev/null || true
     else
         # Fallback for systems without timeout command
-        "$cmd" "$@" 2>/dev/null || true
+        "$cmd" "$@" < /dev/null 2>/dev/null || true
     fi
 }
 
@@ -159,18 +185,25 @@ get_version_from_output() {
 # Get local version of installed tool
 get_local_version() {
     local cmd="$1"
-    local args="$2" 
-    local regex="${3:-'[0-9]+(\.[0-9]+)+'}"
+    local args="$2"
+    local regex="${3:-[0-9]+(\.[0-9]+)+}"
     local path
-    
+
     path=$(where_cmd "$cmd")
     if [[ -z "$path" ]]; then
         echo ""
         return 0
     fi
 
+    # Split on spaces explicitly rather than relying on unquoted-expansion
+    # word-splitting: initialize_common() sets IFS=$'\n\t' (no space) for the
+    # rest of the script, which would otherwise leave a multi-word args
+    # string like "version --client" as a single argument.
+    local -a args_array
+    IFS=' ' read -ra args_array <<< "$args"
+
     local output
-    output=$(run_with_timeout "$DEFAULT_TIMEOUT" "$path" $args)
+    output=$(run_with_timeout "$DEFAULT_TIMEOUT" "$path" "${args_array[@]}")
     get_version_from_output "$output" "$regex"
 }
 

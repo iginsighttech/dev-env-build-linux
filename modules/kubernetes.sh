@@ -25,6 +25,9 @@ kubernetes_check() {
     for tool in kubectl helm k9s; do
         case "$tool" in
             kubectl) version_args="version --client" ;;
+            # helm and k9s both moved version reporting to a "version"
+            # subcommand; neither accepts a --version flag anymore.
+            helm|k9s) version_args="version --short" ;;
             *) version_args="--version" ;;
         esac
 
@@ -55,15 +58,24 @@ install_kubernetes_tools() {
                 fi
                 local bin="$BIN_DIR/kubectl"
                 rm -f "$bin"
+                local arch
+                arch=$(map_arch_for_vendor "$(detect_architecture)" "kubernetes")
                 local kubectl_release
                 kubectl_release=$(curl -s https://dl.k8s.io/release/stable.txt)
                 if [[ "$silent_mode" -eq 1 ]]; then
-                    curl -sLo "$bin" "https://dl.k8s.io/release/${kubectl_release}/bin/linux/amd64/kubectl"
+                    curl -sLo "$bin" "https://dl.k8s.io/release/${kubectl_release}/bin/linux/${arch}/kubectl"
                 else
-                    curl -Lo "$bin" "https://dl.k8s.io/release/${kubectl_release}/bin/linux/amd64/kubectl"
+                    curl -Lo "$bin" "https://dl.k8s.io/release/${kubectl_release}/bin/linux/${arch}/kubectl"
                 fi
                 chmod +x "$bin"
-                add_tool_result "kubectl" "$KUBERNETES_CATEGORY" "$(get_local_version kubectl "version --client" '[0-9]+(\.[0-9]+)+')" "$kubectl_release" "installed" "$bin" "verified"
+                local installed_version
+                installed_version=$(get_local_version kubectl "version --client" '[0-9]+(\.[0-9]+)+')
+                if [[ -n "$installed_version" ]]; then
+                    add_tool_result "kubectl" "$KUBERNETES_CATEGORY" "$installed_version" "$kubectl_release" "installed" "$bin" "verified"
+                else
+                    log_error "kubectl installation verification failed"
+                    add_tool_result "kubectl" "$KUBERNETES_CATEGORY" "" "$kubectl_release" "failed" "" "failed"
+                fi
                 ;;
             helm)
                 if is_dry_run; then
@@ -73,16 +85,26 @@ install_kubernetes_tools() {
                 fi
                 local bin="$BIN_DIR/helm"
                 rm -f "$bin"
+                local arch
+                arch=$(map_arch_for_vendor "$(detect_architecture)" "kubernetes")
                 if [[ "$silent_mode" -eq 1 ]]; then
-                    curl -sLo /tmp/helm.tar.gz https://get.helm.sh/helm-v3.14.2-linux-amd64.tar.gz
+                    curl -sLo /tmp/helm.tar.gz "https://get.helm.sh/helm-v3.14.2-linux-${arch}.tar.gz"
                 else
-                    curl -Lo /tmp/helm.tar.gz https://get.helm.sh/helm-v3.14.2-linux-amd64.tar.gz
+                    curl -Lo /tmp/helm.tar.gz "https://get.helm.sh/helm-v3.14.2-linux-${arch}.tar.gz"
                 fi
                 tar -xzf /tmp/helm.tar.gz -C /tmp
-                mv -f /tmp/linux-amd64/helm "$bin"
+                mv -f "/tmp/linux-${arch}/helm" "$bin"
                 chmod +x "$bin"
-                rm -rf /tmp/helm.tar.gz /tmp/linux-amd64
-                add_tool_result "helm" "$KUBERNETES_CATEGORY" "$(get_local_version helm --version '[0-9]+(\.[0-9]+)+')" "$(get_latest_version_cached helm)" "installed" "$bin" "verified"
+                rm -rf /tmp/helm.tar.gz "/tmp/linux-${arch}"
+                local installed_version latest_version
+                installed_version=$(get_local_version helm "version --short" '[0-9]+(\.[0-9]+)+')
+                latest_version=$(get_latest_version_cached helm)
+                if [[ -n "$installed_version" ]]; then
+                    add_tool_result "helm" "$KUBERNETES_CATEGORY" "$installed_version" "$latest_version" "installed" "$bin" "verified"
+                else
+                    log_error "helm installation verification failed"
+                    add_tool_result "helm" "$KUBERNETES_CATEGORY" "" "$latest_version" "failed" "" "failed"
+                fi
                 ;;
             k9s)
                 if is_dry_run; then
@@ -92,16 +114,26 @@ install_kubernetes_tools() {
                 fi
                 local bin="$BIN_DIR/k9s"
                 rm -f "$bin"
+                local arch
+                arch=$(map_arch_for_vendor "$(detect_architecture)" "kubernetes")
                 if [[ "$silent_mode" -eq 1 ]]; then
-                    curl -sLo /tmp/k9s.tar.gz https://github.com/derailed/k9s/releases/latest/download/k9s_Linux_amd64.tar.gz
+                    curl -sLo /tmp/k9s.tar.gz "https://github.com/derailed/k9s/releases/latest/download/k9s_Linux_${arch}.tar.gz"
                 else
-                    curl -Lo /tmp/k9s.tar.gz https://github.com/derailed/k9s/releases/latest/download/k9s_Linux_amd64.tar.gz
+                    curl -Lo /tmp/k9s.tar.gz "https://github.com/derailed/k9s/releases/latest/download/k9s_Linux_${arch}.tar.gz"
                 fi
                 tar -xzf /tmp/k9s.tar.gz -C /tmp
                 mv -f /tmp/k9s "$bin"
                 chmod +x "$bin"
                 rm -rf /tmp/k9s.tar.gz /tmp/k9s
-                add_tool_result "k9s" "$KUBERNETES_CATEGORY" "$(get_local_version k9s --version '[0-9]+(\.[0-9]+)+')" "$(get_latest_version_cached k9s)" "installed" "$bin" "verified"
+                local installed_version latest_version
+                installed_version=$(get_local_version k9s "version --short" '[0-9]+(\.[0-9]+)+')
+                latest_version=$(get_latest_version_cached k9s)
+                if [[ -n "$installed_version" ]]; then
+                    add_tool_result "k9s" "$KUBERNETES_CATEGORY" "$installed_version" "$latest_version" "installed" "$bin" "verified"
+                else
+                    log_error "k9s installation verification failed"
+                    add_tool_result "k9s" "$KUBERNETES_CATEGORY" "" "$latest_version" "failed" "" "failed"
+                fi
                 ;;
             *)
                 log_warn "Unknown kubernetes tool: $tool"
