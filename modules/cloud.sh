@@ -17,6 +17,15 @@ source "${BASH_SOURCE[0]%/*}/../lib/versioncheck.sh"
 
 readonly CLOUD_CATEGORY="cloud"
 
+# On a fresh $HOME (e.g. root's first-ever gcloud invocation via sudo), gcloud
+# tries to detect whether it's running on a GCE instance by resolving
+# metadata.google.internal. Off GCE, that DNS lookup has no answer and gcloud
+# retries across search domains, which reliably blows past our version-check
+# timeout and leaves get_local_version() with no output to parse. Once
+# ~/.config/gcloud/gce is cached this is instant, but the first run needs the
+# check disabled outright.
+export CLOUDSDK_CORE_CHECK_GCE_METADATA=False
+
 # Maps the tool's config/CLI name to the actual command on PATH
 _cloud_command_for() {
     case "$1" in
@@ -61,7 +70,17 @@ install_cloud_tools() {
 
         case "$tool" in
             aws-cli)
-                install_system_packages awscli
+                # Ubuntu/Debian no longer ship an "awscli" apt package (v1, Python-based,
+                # was dropped from the archives), so install AWS's official v2 bundle instead.
+                local arch
+                arch=$(map_arch_for_vendor "$(detect_architecture)" "aws")
+                local tmp_zip="/tmp/awscliv2.zip"
+                local tmp_dir="/tmp/awscliv2"
+                rm -rf "$tmp_zip" "$tmp_dir"
+                curl -sLo "$tmp_zip" "https://awscli.amazonaws.com/awscli-exe-linux-${arch}.zip"
+                unzip -qq -o "$tmp_zip" -d "$tmp_dir"
+                "$tmp_dir/aws/install" --update -i "$OPT_DIR/aws-cli" -b "$BIN_DIR"
+                rm -rf "$tmp_zip" "$tmp_dir"
                 ;;
             gcloud)
                 install_system_packages google-cloud-cli
@@ -72,10 +91,12 @@ install_cloud_tools() {
             bicep)
                 local bin="$BIN_DIR/bicep"
                 rm -f "$bin"
+                local arch
+                arch=$(map_arch_for_vendor "$(detect_architecture)" "bicep")
                 if [[ "$silent_mode" -eq 1 ]]; then
-                    curl -sLo "$bin" https://github.com/Azure/bicep/releases/latest/download/bicep-linux-x64
+                    curl -sLo "$bin" "https://github.com/Azure/bicep/releases/latest/download/bicep-linux-${arch}"
                 else
-                    curl -Lo "$bin" https://github.com/Azure/bicep/releases/latest/download/bicep-linux-x64
+                    curl -Lo "$bin" "https://github.com/Azure/bicep/releases/latest/download/bicep-linux-${arch}"
                 fi
                 chmod +x "$bin"
                 ;;

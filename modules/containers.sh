@@ -399,12 +399,24 @@ containers_install() {
     fi
     for tool in "${tool_array[@]}"; do
         tool=$(trim "$tool")
-        local pkg=""
+        # "pkg" is the apt/dnf/pacman package to install; "cmd" is the
+        # resulting binary name used for verification and reporting. These
+        # differ for docker on Debian/Ubuntu, which ships the engine as the
+        # "docker.io" package (the bare "docker" apt package doesn't exist
+        # there and only resolves to virtual packages like moby-engine).
+        local pkg="" cmd=""
         case "$tool" in
-            docker|docker-engine) pkg="docker" ;;
-            docker-compose|compose) pkg="docker-compose" ;;
-            podman) pkg="podman" ;;
-            containerd) pkg="containerd" ;;
+            docker|docker-engine)
+                cmd="docker"
+                if [[ "$PKG_MGR" == "apt" ]]; then
+                    pkg="docker.io"
+                else
+                    pkg="docker"
+                fi
+                ;;
+            docker-compose|compose) pkg="docker-compose"; cmd="docker-compose" ;;
+            podman) pkg="podman"; cmd="podman" ;;
+            containerd) pkg="containerd"; cmd="containerd" ;;
             *)
                 log_warn "Unknown container tool: $tool"
                 continue
@@ -412,23 +424,23 @@ containers_install() {
         esac
 
         local latest
-        latest=$(get_latest_version_cached "$pkg")
+        latest=$(get_latest_version_cached "$cmd")
 
         if is_dry_run; then
             log_info "DRY-RUN: Would install $pkg"
-            add_tool_result "$pkg" "$CONTAINERS_CATEGORY" "" "$latest" "would_install" "" "pending"
+            add_tool_result "$cmd" "$CONTAINERS_CATEGORY" "" "$latest" "would_install" "" "pending"
             continue
         fi
 
         install_system_packages "$pkg"
 
         local installed_version
-        installed_version=$(get_local_version "$pkg" "--version" '[0-9]+(\.[0-9]+)+')
+        installed_version=$(get_local_version "$cmd" "--version" '[0-9]+(\.[0-9]+)+')
         if [[ -n "$installed_version" ]]; then
-            add_tool_result "$pkg" "$CONTAINERS_CATEGORY" "$installed_version" "$latest" "installed" "$(where_cmd "$pkg")" "verified"
+            add_tool_result "$cmd" "$CONTAINERS_CATEGORY" "$installed_version" "$latest" "installed" "$(where_cmd "$cmd")" "verified"
         else
-            log_error "$pkg installation verification failed"
-            add_tool_result "$pkg" "$CONTAINERS_CATEGORY" "" "$latest" "failed" "" "failed"
+            log_error "$cmd installation verification failed"
+            add_tool_result "$cmd" "$CONTAINERS_CATEGORY" "" "$latest" "failed" "" "failed"
         fi
     done
 }

@@ -19,7 +19,7 @@ readonly HASHICORP_CATEGORY="hashicorp"
 
 # Fallback versions used only if a package-manager install fails and we
 # have to fall back to downloading a zip directly from releases.hashicorp.com
-declare -A HASHICORP_FALLBACK_VERSION=(
+declare -gA HASHICORP_FALLBACK_VERSION=(
     [terraform]="1.8.5"
     [packer]="1.10.2"
     [vault]="1.16.2"

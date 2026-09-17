@@ -72,6 +72,13 @@ map_arch_for_vendor() {
                 *) echo "x86_64" ;;
             esac
             ;;
+        bicep)
+            case "$arch" in
+                x86_64) echo "x64" ;;
+                aarch64) echo "arm64" ;;
+                *) echo "x64" ;;
+            esac
+            ;;
         *)
             echo "$arch"
             ;;
